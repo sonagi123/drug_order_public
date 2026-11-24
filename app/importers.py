@@ -167,16 +167,20 @@ def import_stats(data, filename, start, end, replace=False, rows=None):
         a["qty"] += qty
         a["amount"] += _num(g("총금액"))
         a["patients"] += int(_num(g("환자수")))
+        # 처방발생 통계에는 청구코드·성분코드가 있어서 등록수가 없이도 같은 제품 합치기가 됨
+        claim = _s(g("청구코드")) or (cat["claim_code"] if cat else None) or None
+        ingr = _s(g("성분코드")) or (cat["ingr_code"] if cat else None) or None
         ex = db.one("SELECT code FROM drugs WHERE code=?", (code,))
         if not ex:
             conn.execute(
                 """INSERT INTO drugs(code, name, order_name, maker, claim_code, ingr_code, insured, price, is_new, created_at)
                    VALUES (?,?,?,?,?,?,?,?,1,?)""",
-                (code, name, short_name(name), maker, cat["claim_code"] if cat else None,
-                 cat["ingr_code"] if cat else None, insured, price if insured else 0, db.now()))
+                (code, name, short_name(name), maker, claim, ingr, insured, price if insured else 0, db.now()))
             added += 1
         else:
-            conn.execute("UPDATE drugs SET maker=COALESCE(NULLIF(?,''), maker), insured=? WHERE code=?", (maker, insured, code))
+            conn.execute("""UPDATE drugs SET maker=COALESCE(NULLIF(?,''), maker), insured=?,
+                            claim_code=COALESCE(NULLIF(claim_code,''), ?), ingr_code=COALESCE(NULLIF(ingr_code,''), ?) WHERE code=?""",
+                         (maker, insured, claim, ingr, code))
             if insured and price:
                 conn.execute("UPDATE drugs SET price=? WHERE code=?", (price, code))
     for code, a in agg.items():
