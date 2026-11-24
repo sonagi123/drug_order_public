@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}원장 제품명 연결{% endblock %}
+{% block body %}
+<div><h1>매출원장 제품명 연결</h1>
+<p class="sub">원장의 제품명이 어떤 약인지 자동으로 못 찾은 것들이에요. 한 번 연결하면 다음 원장부터는 자동이에요. 원내에서 안 쓰는 약이면 "무시"를 고르세요.</p></div>
+<section class="card" style="overflow:hidden"><div class="scroll"><table style="min-width:760px">
+  <thead><tr><th>도매상</th><th>원장 제품명</th><th>규격</th><th>마지막 거래</th><th>어떤 약인가요?</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr><td>{{ r.ws }}</td><td style="font-weight:500">{{ r.name }}</td><td>{{ r.spec }}</td><td class="muted">{{ r.last }}</td>
+      <td><select style="max-width:360px" onchange="link({{ r.ws_id }}, {{ r.name|tojson|forceescape }}, this.value)">
+        <option value="">고르세요</option><option value="-">무시 (원내에서 안 씀)</option>
+        {% for d in drugs %}<option value="{{ d.code }}">{{ d.name }} · {{ d.maker }}</option>{% endfor %}
+      </select></td></tr>
+  {% else %}
+    <tr><td colspan="5" class="muted" style="padding:20px 16px">연결이 필요한 이름이 없어요.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></section>
+{% endblock %}
+{% block script %}
+<script>
+async function link(ws, name, code) {
+  if (!code) return;
+  const j = await post('/api/link', { ws, name, code });
+  if (j.ok) toast('연결했어요.');
+}
+</script>
+{% endblock %}

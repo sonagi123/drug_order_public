@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}리포트 {{ m }}{% endblock %}
+{% block script %}
+<script>
+const DISC = {{ billing|map(attribute='id')|list|tojson }};
+const WS = {}; {% for w in billing %}WS[{{ w.id }}] = { rate: {{ w.rate or 0 }}, on: {{ 'true' if w.on else 'false' }} };{% endfor %}
+function drawBilling() {
+  document.querySelectorAll('#billing tr[data-ws]').forEach(tr => {
+    const w = WS[tr.dataset.ws], base = +tr.dataset.base, d = w.on ? Math.round(base * w.rate / 100) : 0;
+    tr.querySelector('.disc').textContent = w.on && w.rate ? '−' + won(d) : '—';
+    tr.querySelector('.pay').textContent = won(base - d);
+  });
+}
+async function setDisc(id, on) {
+  WS[id].on = on; drawBilling();
+  if (on && !WS[id].rate) toast('할인율이 0%예요. 설정 → 도매상에서 할인율을 넣어주세요.');
+  await post('/api/ws/' + id + '/discount', { on });
+}
+drawBilling();
+const DR = {{ r.drugs|tojson }};
+const DS = { k: 'amount', d: -1 };
+function drawDrugs() {
+  const cols = [['약품', 'name'], ['제약사', 'maker'], ['도매상', 'ws'], ['입고 통', 'packs', 'r'], ['입고 정', 'units', 'r'], ['1정 단가', 'unit', 'r'], ['근거', 'src'], ['금액', 'amount', 'r']];
+  document.getElementById('dheads').innerHTML = cols.map(([l, k, al]) => `<th class="${al || ''}" style="cursor:pointer;white-space:nowrap" onclick="sortD('${k}')">${l} ${DS.k === k ? (DS.d > 0 ? '▲' : '▼') : '<span style="opacity:.35">↕</span>'}</th>`).join('');
+  const t = (document.getElementById('dq').value || '').trim();
+  let v = DR.filter(d => !t || (d.name + d.maker + d.ws).includes(t));
+  v = sortBy_(v, d => d[DS.k], DS.d);
+  document.getElementById('drows').innerHTML = v.length ? v.map(d => `<tr><td style="font-weight:500">${esc(d.name)}${d.insured ? '' : ' <span class="tag new">비급여</span>'}</td><td class="muted">${esc(d.maker)}</td><td>${esc(d.ws)}</td>
+    <td class="r">${fmt(d.packs)}</td><td class="r">${fmt(d.units)}</td><td class="r">${d.unit == null ? '—' : fmt(d.unit, d.unit < 100 ? 1 : 0)}</td>
+    <td><span class="tag ${d.src === '원장' ? 'ledger' : d.src === '단가 없음' ? 'none' : 'manual'}">${esc(d.src)}</span></td><td class="r">${won(d.amount)}</td></tr>`).join('')
+    : '<tr><td colspan="8" class="muted" style="padding:16px">이 달 입고 기록이 없어요. 입고 체크를 하면 여기에 쌓여요.</td></tr>';
+  document.getElementById('dfoot').innerHTML = `<td colspan="7">합계 ${v.length}품목</td><td class="r">${won(v.reduce((a, d) => a + d.amount, 0))}</td>`;
+}
+function sortD(k) { if (DS.k === k) DS.d = -DS.d; else { DS.k = k; DS.d = (k === 'amount' || k === 'packs' || k === 'units' || k === 'unit') ? -1 : 1; } drawDrugs(); }
+drawDrugs();
+</script>
+{% endblock %}
+{% block body %}
+<div class="row between">
+  <h1>월간 리포트</h1>
+  <div class="row">
+    <a class="btn" href="{{ url_for('main.report', m=prev) }}" aria-label="이전 달">‹</a>
+    <b style="font-size:18px;padding:0 6px">{{ m[:4] }}년 {{ m[5:]|int }}월</b>
+    <a class="btn" href="{{ url_for('main.report', m=nxt) }}" aria-label="다음 달">›</a>
+    <a class="btn" href="{{ url_for('main.report_xlsx', m=m) }}">엑셀로 내보내기</a>
+    <a class="btn" href="{{ url_for('main.report_lock') }}">잠그기</a>
+  </div>
+</div>
+{% set led_net = r.ledger.values()|sum(attribute='net') %}
+{% set led_disc = r.ledger.values()|sum(attribute='disc') %}
+<div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
+  <div class="card kpi" style="border:2px solid var(--g)">
+    <span style="font-weight:700">이번 달 총 구매 금액</span><b style="font-size:30px">{{ r.purchase|won }}</b>
+    <span class="muted small">{% for p in r.purchaseParts %}{{ p.ws }} {{ p.amount|won }} ({{ p.how }}){% if not loop.last %} · {% endif %}{% else %}이 달 입고·원장 기록 없음{% endfor %}{% if r.missingWs and r.purchaseParts %}<br><span style="color:var(--amb)">기록 없음: {{ r.missingWs|join(', ') }}</span>{% endif %}</span>
+  </div>
+  <div class="card kpi" style="border:2px solid var(--g)">
+    <span style="font-weight:700">이번 달 처방된 약 금액 (원내)</span><b style="font-size:30px">{{ r.usage|won }}</b>
+    <span class="muted small">eghis 통계 금액 · {% if r.covered < r.monthDays %}<b style="color:var(--amb)">{{ r.monthDays }}일 중 {{ r.covered }}일만 반영</b>{% else %}한 달 전부 반영{% endif %} · 구매 단가로 환산 {{ r.usageCost|won }}</span>
+  </div>
+  {% set diff = r.purchase - r.usageCost %}
+  <div class="card kpi">
+    <span class="muted">구매 − 처방 (구매 단가 기준)</span><b style="font-size:30px;color:{{ 'var(--amb)' if diff > 0 else 'var(--g)' }}">{{ ('+' if diff > 0 else '') ~ (diff|won) }}</b>
+    <span class="muted small">{% if r.covered < r.monthDays %}처방 자료가 다 안 올라와서 아직 정확하지 않아요{% elif r.missingWs %}{{ r.missingWs|join(', ') }} 구매 기록이 없어서 구매액이 빠져 있어요{% elif diff > 0 %}쓴 것보다 많이 샀어요 → 재고가 늘었어요{% else %}산 것보다 많이 썼어요 → 재고가 줄었어요{% endif %}</span>
+  </div>
+</div>
+<div class="grid4">
+  <div class="card kpi"><span class="muted">이 달 주문액</span><b>{{ r.ordered|won }}</b><span class="muted small">이 달에 "주문 확정"한 수량 기준</span></div>
+  <div class="card kpi"><span class="muted">구매액 (입고 기준)</span><b>{{ r.total|won }}</b><span class="muted small">급여 {{ r.insured|won }} · 비급여 {{ r.noninsured|won }}</span></div>
+  <div class="card kpi"><span class="muted">아직 안 들어온 금액</span><b>{{ r.pending|won }}</b><span class="muted small">지금 기준 입고 대기 + 미송분</span></div>
+  <div class="card kpi"><span class="muted">매출원장 실제 매입</span><b>{{ led_net|won if r.ledger else '—' }}</b><span class="muted small">{% if r.ledger %}{{ r.ledger.keys()|join(', ') }} · 할인 반영{% else %}이 달 원장 없음{% endif %}</span></div>
+  <div class="card kpi"><span class="muted">결제 할인</span><b>{{ (-led_disc)|won if r.ledger else '—' }}</b><span class="muted small">매출원장의 할인 줄 합계</span></div>
+</div>
+<p class="muted small" style="margin:0">단가는 <b>매출원장에 거래 기록이 있으면 원장 단가</b>, 없으면 급여는 eghis 약가, 비급여는 약품 관리의 통당 매입가로 계산해요.</p>
+{% if r.missing %}<div class="note">비급여 매입단가가 없어 구매액에서 빠진 약: {{ r.missing|join(', ') }} — <a href="{{ url_for('main.drugs') }}">약품 관리</a>에서 넣어주세요.</div>{% endif %}
+<div class="split">
+  <section class="card pad main" style="flex:1 1 420px;display:flex;flex-direction:column;gap:12px">
+    <div><h2>최근 6개월 구매</h2><p class="sub small">진한 막대 = 입고 체크 기준 추정, 연한 막대 = 매출원장 실제</p></div>
+    {% set mx = [1] + trend|map(attribute='est')|list + trend|map(attribute='ledger')|list %}
+    {% set top = mx|max %}
+    <div class="vbars">
+      {% for t in trend %}
+      <div title="{{ t.m }} 추정 {{ t.est|won }} / 원장 {{ t.ledger|won }}">
+        <span>{{ ((t.est if t.est > t.ledger else t.ledger) / 10000)|round|int }}만</span>
+        <div style="display:flex;gap:4px;align-items:flex-end">
+          <i style="height:{{ (t.est / top * 170)|round|int }}px;width:22px"></i>
+          <i class="l2" style="height:{{ (t.ledger / top * 170)|round|int }}px;width:22px"></i>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div style="display:flex;gap:18px;padding:0 8px" class="muted">{% for t in trend %}<span style="flex:1;text-align:center">{{ t.m[5:]|int }}월</span>{% endfor %}</div>
+  </section>
+  <section class="card pad side" style="flex:1 1 480px;display:flex;flex-direction:column;gap:10px">
+    {% set src = r.byMaker if r.byMaker else r.usageMakers %}
+    <div><h2>제약사별 {{ '구매액' if r.byMaker else '사용액' }} 상위</h2><p class="sub small">{{ '입고 체크 기준 추정' if r.byMaker else '입고 기록이 없어 eghis 통계 금액으로 보여줘요' }}</p></div>
+    {% set first = (src[0][1] if src else 1) or 1 %}
+    {% for k, v in src %}
+      <div style="display:grid;grid-template-columns:150px minmax(0,1fr) 90px;gap:10px;align-items:center;font-size:13px" title="{{ k }} {{ v|won }}">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ k }}</span>
+        <div class="bar"><i style="width:{{ (v / first * 100)|round(1) }}%"></i></div>
+        <span class="r">{{ (v / 10000)|round|int }}만</span></div>
+    {% else %}<p class="muted">이 달 자료가 없어요.</p>{% endfor %}
+  </section>
+</div>
+<section class="card" style="overflow:hidden" id="billing">
+  <div class="row between pad" style="border-bottom:1px solid var(--line)">
+    <div><h2>도매상별 결제 대금</h2><p class="sub small">도매상마다 결제 마감일 기준으로 계산해요. 마감일·할인율은 설정 → 도매상에서 바꿀 수 있어요.</p></div>
+    <form class="row" method="get" action="{{ url_for('main.report') }}#billing" style="gap:6px">
+      <input type="hidden" name="m" value="{{ m }}">
+      <span class="muted small">기간 직접 지정</span>
+      <input type="date" name="ps" value="{{ ps }}" style="padding:6px 8px"><span>~</span><input type="date" name="pe" value="{{ pe }}" style="padding:6px 8px">
+      <button style="min-height:38px">보기</button>
+    </form>
+  </div>
+  <div class="scroll"><table style="min-width:980px">
+    <thead><tr><th>도매상</th><th>구분</th><th>기간</th><th class="r">입고 기준</th><th class="r">매출원장</th><th class="c">할인 적용</th><th class="r">할인</th><th class="r">결제 예정액</th></tr></thead>
+    <tbody>
+    {% for w in billing %}{% for p in w.periods %}
+      <tr data-ws="{{ w.id }}" data-base="{{ p.base|round }}" {% if loop.first %}style="border-top:2px solid var(--line)"{% endif %}>
+        <td style="font-weight:500">{% if loop.first %}{{ w.name }}<div class="muted small">마감 {{ (w.day ~ '일') if w.day else '말일' }}</div>{% endif %}</td>
+        <td>{{ p.label }}</td>
+        <td class="muted">{{ p.start[5:].replace('-', '/') }} ~ {{ p.end[5:].replace('-', '/') }}</td>
+        <td class="r">{{ p.receipts|won }}</td>
+        <td class="r">{% if p.ledger is not none %}{{ p.ledger|won }}{% if not p.ledgerFull %}<div class="small" style="color:var(--amb)">원장은 {{ p.covered[5:].replace('-', '/') }}까지 · 이후 입고 {{ p.after|won }} 더함</div>{% endif %}{% else %}—{% endif %}</td>
+        <td class="c">{% if loop.first %}<label class="row" style="justify-content:center;gap:6px"><input type="checkbox" {{ 'checked' if w.on }} onchange="setDisc({{ w.id }}, this.checked)" style="width:20px;height:20px"> <span class="small">{{ w.rate or 0 }}%</span></label>{% endif %}</td>
+        <td class="r disc">—</td><td class="r pay" style="font-weight:700">—</td>
+      </tr>
+    {% endfor %}{% else %}<tr><td colspan="8" class="muted">도매상이 없어요.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  <p class="muted small" style="margin:0;padding:10px 20px 14px">결제 예정액은 매출원장이 있으면 원장 금액(원장이 끝난 뒤의 입고분은 더해서), 없으면 입고 기준 금액에서 할인을 뺀 값이에요. 할인 적용 체크는 도매상별로 저장돼요.</p>
+</section>
+<section class="card" style="overflow:hidden">
+  <div class="pad" style="border-bottom:1px solid var(--line)"><h2>도매상별</h2></div>
+  <div class="scroll"><table style="min-width:640px">
+    <thead><tr><th>도매상</th><th class="r">주문 횟수</th><th class="r">주문액</th><th class="r">구매액 (입고)</th><th class="r">매출원장 실제</th><th class="r">할인</th></tr></thead>
+    <tbody>
+    {% for t in r.wsTable %}
+      <tr><td style="font-weight:500">{{ t.ws }}</td><td class="r">{{ t.orders }}</td><td class="r">{{ t.ordered|won }}</td><td class="r">{{ t.est|won }}</td>
+        <td class="r">{{ t.ledger.net|won if t.ledger else '—' }}</td><td class="r">{{ (-t.ledger.disc)|won if t.ledger else '—' }}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">이 달 주문·입고·원장 기록이 없어요.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+<section class="card" style="overflow:hidden">
+  <div class="row between pad" style="border-bottom:1px solid var(--line)">
+    <h2>약별 구매 내역 (입고 기준)</h2>
+    <input type="search" id="dq" placeholder="약 이름·제약사·도매상 검색" oninput="drawDrugs()" style="min-width:240px">
+  </div>
+  <div class="scroll"><table style="min-width:900px">
+    <thead><tr id="dheads"></tr></thead><tbody id="drows"></tbody>
+    <tfoot><tr id="dfoot" style="background:#F8FAF9;font-weight:700"></tr></tfoot>
+  </table></div>
+</section>
+{% endblock %}

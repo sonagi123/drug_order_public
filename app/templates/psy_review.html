@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}향정 기록 보기{% endblock %}
+{% block body %}
+<h1>향정 관리</h1>
+<div class="tabs">
+  <a href="{{ url_for('main.psy') }}">오늘 기록</a>
+  <a class="on" href="{{ url_for('main.psy_review') }}">기록 보기</a>
+</div>
+<div class="row" style="gap:8px">
+  <form class="row" style="gap:6px" method="get">
+    <input type="date" name="from" value="{{ data.from }}" max="{{ data.today }}" aria-label="시작일">
+    <span class="muted">~</span>
+    <input type="date" name="to" value="{{ data.to }}" max="{{ data.today }}" aria-label="끝일">
+    <button>보기</button>
+  </form>
+  <a class="chip" href="?from={{ data.today[:8] }}01&to={{ data.today }}">이번 달</a>
+  {% if data.first %}<a class="chip" href="?from={{ data.first }}&to={{ data.today }}">처음부터</a>{% endif %}
+  <span class="grow"></span>
+  <input type="search" id="q" placeholder="약 이름 검색" oninput="S.q=this.value.trim();render()" style="min-width:200px">
+  <a class="btn" href="{{ url_for('main.psy_xlsx') }}?from={{ data.from }}&to={{ data.to }}">엑셀로 내보내기</a>
+</div>
+<div id="list" style="display:flex;flex-direction:column;gap:10px"></div>
+{% endblock %}
+{% block script %}
+<script>
+const D = {{ data|tojson }};
+const S = { q: '', open: {} };
+if (D.days.length) S.open[D.days[0].date] = true;
+const md = d => `${+d.slice(5, 7)}/${+d.slice(8)}(${'일월화수목금토'[new Date(d + 'T00:00:00').getDay()]})`;
+const n = (v, u) => v == null ? '—' : fmt(v) + (u || '');
+function render() {
+  const q = S.q.toLowerCase();
+  const days = D.days.map(d => ({ ...d, rows: q ? d.rows.filter(r => r.name.toLowerCase().includes(q)) : d.rows })).filter(d => d.rows.length);
+  if (q) days.forEach(d => S.open[d.date] = true);
+  document.getElementById('list').innerHTML = days.length ? days.map(d => {
+    const open = !!S.open[d.date];
+    const miss = D.total - d.n;
+    const sum = `<span class="muted">사용 기록 ${d.n}/${D.total}개${d.ins ? ` · 입고 ${d.ins}개` : ''}</span>`
+      + (d.staff.length ? `<span class="muted">· ${d.staff.map(esc).join(', ')}</span>` : '')
+      + (miss > 0 && d.n > 0 ? `<span class="tag mid" style="font-size:12px">${miss}개 미입력</span>` : '');
+    const rows = d.rows.map(r => {
+      const odd = r.pack && r.left != null && (r.left < r.pack || r.left < 0);
+      return `<div class="rv-row${odd ? ' warn' : ''}">
+        <span>${esc(r.name)}${r.base ? ' <span class="tag none" style="font-size:11px">재고 입력</span>' : ''}</span>
+        <span class="r"><span class="m-lbl">전날 </span>${n(r.prev)}</span>
+        <span class="r" style="color:${r.in ? 'var(--g)' : 'var(--mut)'}"><span class="m-lbl">입고 </span>${r.in ? '+' + fmt(r.in) : '-'}</span>
+        <span class="r"><span class="m-lbl">사용 </span><b>${r.use == null ? '<span class="muted">-</span>' : fmt(r.use)}</b></span>
+        <span class="r"><span class="m-lbl">잔량 </span><b style="color:${odd ? 'var(--amb)' : 'var(--ink)'}">${n(r.left, r.unit)}</b></span>
+        <span class="small muted hide-m">${esc(r.staff)}</span></div>`;
+    }).join('');
+    return `<div class="card" style="overflow:hidden">
+      <button class="dn-head" aria-expanded="${open}" onclick="S.open['${d.date}']=!S.open['${d.date}'];render()">
+        <b style="font-size:18px;min-width:96px">${md(d.date)}</b>${sum}<span class="grow"></span>
+        <span class="muted small">사용 합계 ${fmt(d.total)}</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'}"/></svg>
+      </button>
+      ${open ? `<div class="rv-row rv-th"><span>약</span><span class="r">전날 잔량</span><span class="r">입고</span><span class="r">사용량</span><span class="r">잔량</span><span class="hide-m">기록자</span></div>${rows}
+        <div class="row between" style="padding:10px 18px;border-top:1px solid var(--line2);background:#F8FAF9"><span class="muted small">이날 기록을 고치려면</span><a class="btn" href="{{ url_for('main.psy') }}?d=${d.date}">이날 기록 고치기</a></div>` : ''}
+    </div>`;
+  }).join('') : '<div class="card pad muted">이 기간에 향정 기록이 없어요.</div>';
+}
+render();
+</script>
+{% endblock %}

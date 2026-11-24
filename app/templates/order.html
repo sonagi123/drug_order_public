@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+{% block title %}주문{% endblock %}
+{% block body %}
+<div class="row between" style="align-items:flex-end">
+  <div>
+    <h1>주문 만들기</h1>
+    <div class="usage-note">{% set u = usage_note() %}{% if u %}<b>처방 반영: {% if u.today %}오늘 {% endif %}{{ u.label }}까지</b>{% else %}<b>아직 처방 통계가 없어요</b> · 업로드에서 eghis 통계를 올려 주세요{% endif %}</div>
+    <p class="sub">제약사별로 약을 고른 뒤 원하는 도매상 장바구니에 담으세요. 수량은 목표 재고까지 모자란 만큼을 포장 단위로 올림한 제안값이에요.</p>
+  </div>
+  <div class="row">
+    <a class="btn" href="{{ url_for('main.orders_history') }}">지난 주문</a>
+  </div>
+</div>
+<div id="warn"></div>
+<div class="split">
+  <section class="card main" style="overflow:hidden">
+    <div class="pad" style="padding-bottom:12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px">
+      <div class="row between">
+        <input type="search" id="q" placeholder="약 이름·성분·제약사 검색 (예: 콘서타, 클로나제팜)" oninput="S.q=this.value.trim();render()" style="flex:1 1 280px;font-size:15px;padding:11px 14px" aria-label="약 검색">
+        <a class="btn dashed" href="{{ url_for('main.drugs') }}#add">+ 새 약 추가</a></div>
+      <button id="mkToggle" onclick="toggleMakers()" style="align-self:flex-start;border:0;padding:4px 0;min-height:32px;color:#55605D;font-weight:500"></button>
+      <div class="row" id="makers" style="gap:6px"></div>
+    </div>
+    <div class="scroll"><table style="min-width:780px">
+      <thead><tr id="heads"></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+
+  </section>
+  <aside class="card side" style="position:sticky;top:12px;max-height:calc(100vh - 24px);overflow-y:auto">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--line);background:#F8FAF9;display:flex;flex-direction:column;gap:10px">
+      <div class="row between"><span>선택 <b id="selCount">0</b>품목</span>
+        <span class="row" style="gap:6px"><button onclick="selectNeeded()" style="min-height:36px;padding:6px 10px;font-size:13px">주문 필요한 약 모두 선택</button><button onclick="S.sel={};render()" style="min-height:36px;padding:6px 10px;font-size:13px">선택 해제</button></span></div>
+      <div id="selSummary" class="muted small" style="line-height:1.6"></div>
+      <span class="muted small">도매상을 안 고른 약은 이 도매상으로</span>
+      <div class="row" id="wsPick" style="gap:6px"></div>
+      <button class="wrap-btn" onclick="setCheckedWs()">체크한 약 모두 이 도매상으로 바꾸기</button>
+      <button class="primary big fin-btn" onclick="addToCart()"><span>장바구니에 담기</span><span class="fin-sub">도매상별로 자동 분류</span></button>
+    </div>
+    <div class="row between" style="padding:14px 18px 0"><h2>도매상 장바구니</h2><span class="muted" id="cartTotal"></span></div>
+    <div class="tabs" id="cartTabs" style="padding:0 10px"></div>
+    <div style="padding:6px 18px" id="cartItems"></div>
+    <div id="finBox" style="padding:6px 18px 18px;position:sticky;bottom:0;background:#fff"></div>
+  </aside>
+</div>
+<div id="sheet" class="sheet-bg" style="display:none" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="row between" style="align-items:flex-start;gap:12px">
+      <div><h2 id="sheetTitle" style="font-size:21px">카톡 주문서</h2>
+        <div class="muted" style="margin-top:4px">장바구니의 약을 도매상별로 나눴어요. 원장님 확인이 필요하면 [스크린샷 복사] → 카톡에 붙여넣기. 그다음 도매상마다 문구를 복사해 보내고 확정을 누르세요.</div></div>
+      <div class="row" style="gap:8px;flex-wrap:nowrap"><b id="sheetProg" style="color:var(--g);white-space:nowrap"></b>
+        <button class="outline" id="shotBtn" onclick="shotSheet()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>스크린샷 복사</button>
+        <button onclick="closeSheet()" class="hide-m">장바구니 고치기</button>
+        <button onclick="closeSheet()" aria-label="닫기" style="width:44px;padding:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    </div>
+    <div id="shotArea">
+      <div class="shot-only" style="display:none;font-size:18px;font-weight:700;margin-bottom:12px" id="shotTitle"></div>
+      <div id="sheetCards" class="sheet-cards"></div>
+    </div>
+    <div id="sheetDone"></div>
+  </div>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+const D = {{ data|tojson }};
+let _mk = true; try { _mk = localStorage.getItem('makersOpen') !== '0'; } catch (e) {}
+const S = { rowWs: {}, sortKey: null, sortDir: 1, makersOpen: _mk, q: '', maker: 'all', sel: {}, over: {}, pick: D.ws.length ? D.ws[0].id : null, tab: 'all', cart: {} };
+for (const [code, c] of Object.entries(D.cart)) S.cart[code] = { ws: c.ws_id, packs: c.packs };
+const wsName = id => (D.ws.find(w => w.id == id) || {}).name || '?';
+const byCode = {}; D.items.forEach(i => byCode[i.code] = i);
+
+function qtyOf(it) { return S.cart[it.code] ? S.cart[it.code].packs : (S.over[it.code] ?? it.sugg); }
+
+function render() {
+  let w = '';
+  if (D.notReady) w += `<div class="note">포장단위가 없는 약 ${D.notReady}개는 표에서 바로 입력하면 주문할 수 있어요. 목표 재고가 없는 약은 제안 수량 없이 직접 수량을 정하면 돼요.</div>`;
+  if (D.oldBackorders) w += `<div class="note" style="margin-top:6px">7일 넘은 미송분이 ${D.oldBackorders}건 있어요. <a href="/backorder">미송분 보기</a></div>`;
+  document.getElementById('warn').innerHTML = w;
+
+  const need = i => i.sugg > 0;
+  const nNeed = m => D.items.filter(i => i.maker === m && need(i)).length;
+  const makers = [...new Set(D.items.map(i => i.maker))].sort((a, b) => (nNeed(b) > 0) - (nNeed(a) > 0) || a.localeCompare(b, 'ko'));
+  const tabs = [['all', '전체', D.items.length, D.items.filter(need).length], ['need', '주문 필요', D.items.filter(need).length, 0]]
+    .concat(makers.map(m => [m, m, D.items.filter(i => i.maker === m).length, nNeed(m)]));
+  document.getElementById('makers').innerHTML = tabs.map(([k, l, n, nd]) =>
+    `<button class="chip ${S.maker === k ? 'on' : ''}" onclick="S.maker=${esc(JSON.stringify(k))};render()">${esc(l)} ${n}${nd ? ` <span class="count" title="주문 필요">${nd}</span>` : ''}</button>`).join('');
+
+  let vis = S.maker === 'all' ? D.items : S.maker === 'need' ? D.items.filter(i => need(i) || S.cart[i.code]) : D.items.filter(i => i.maker === S.maker);
+  document.getElementById('makers').style.display = S.makersOpen ? 'flex' : 'none';
+  const cur = tabs.find(t => t[0] === S.maker);
+  document.getElementById('mkToggle').innerHTML = S.makersOpen ? '제약사 접기 ▴' : `제약사 펼치기 ▾ <span class="muted">· 지금: ${esc(cur ? cur[1] : '전체')}</span>`;
+  const cols = [['', null], ['약품', 'name'], ['포장', 'pack'], ['주평균', 'daily', 'r'], ['추정 재고', 'est', 'r'], ['목표', 'target', 'r'], ['주문 (통)', 'qty', 'c'], ['담을 도매상', 'rws'], ['장바구니', 'cart']];
+  const headsHtml = () => cols.map(([l, k, al]) => k
+    ? `<th class="${al || ''}" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="sortBy('${k}')" title="눌러서 정렬">${l} ${S.sortKey === k ? (S.sortDir > 0 ? '▲' : '▼') : '<span style="opacity:.35">↕</span>'}</th>`
+    : `<th style="width:44px">${selAllBtn()}</th>`).join('');
+  if (S.q) {  // 검색어가 있으면 탭과 상관없이 전체에서 찾음
+    const t = S.q.toLowerCase();
+    vis = D.items.filter(i => (i.name + ' ' + i.full + ' ' + i.maker).toLowerCase().includes(t));
+  }
+  if (S.sortKey) {
+    const val = i => ({ name: i.name, pack: i.hasPack ? i.pack : null, daily: i.daily || null, est: i.est, target: i.hasTarget ? i.target : null,
+      qty: i.hasPack ? qtyOf(i) : null, rws: rowWs(i) ? wsName(rowWs(i)) : null, cart: S.cart[i.code] ? wsName(S.cart[i.code].ws) : null })[S.sortKey];
+    vis = sortBy_(vis, val, S.sortDir);
+  }
+  S.vis = vis;
+  document.getElementById('heads').innerHTML = headsHtml();
+  document.getElementById('rows').innerHTML = vis.length ? vis.map(i => {
+    const q = qtyOf(i), c = S.cart[i.code];
+    const days = i.daily > 0 && i.est != null ? i.est / i.daily : null;
+    return `<tr class="${S.sel[i.code] ? 'sel' : q === 0 ? 'zero' : ''}">
+      <td>${i.hasPack ? `<button class="cb ${S.sel[i.code] ? 'on' : ''}" aria-label="선택" onclick="toggle('${i.code}')">${CHECK}</button>` : ''}</td>
+      <td><div class="row" style="gap:6px;font-weight:500">${i.psy ? '<span class="tag psy">향정</span>' : ''}${esc(i.name)}</div><div class="muted small">${esc(i.maker)}</div></td>
+      <td>${i.hasPack ? esc(i.packLabel) : `<input type="number" min="1" placeholder="1통=?정" style="width:90px;border-color:#E3A33B;background:#FFFBF3" onchange="setPack('${i.code}',this.value)" aria-label="포장단위">`}</td>
+      <td class="r">${i.daily ? fmt(i.daily * 7, i.daily * 7 < 10 ? 1 : 0) + esc(i.unit) : '—'}</td>
+      <td class="r"><div>${i.est == null ? '—' : fmt(i.est) + esc(i.unit)}</div>${i.est != null && i.hasPack ? `<div class="muted small">≈ ${fmt(i.est / i.pack, 1)}통</div>` : ''}${daysBadge(days)}${i.pending ? `<div class="muted small">입고 대기 ${fmt(i.pending)}</div>` : ''}</td>
+      <td class="r">${i.hasTarget ? fmt(i.target) + esc(i.unit) : '<span class="muted small">미입력</span>'}</td>
+      <td class="c">${i.hasPack ? `<span class="step"><button aria-label="한 통 줄이기" onclick="chg('${i.code}',-1)">−</button><span class="v">${q}</span><button aria-label="한 통 늘리기" onclick="chg('${i.code}',1)">+</button></span>` : '<span class="muted small">포장 입력 후</span>'}
+        ${!c && S.over[i.code] != null && S.over[i.code] !== i.sugg ? `<div class="small" style="color:var(--amb)">제안 ${i.sugg}통</div>` : ''}</td>
+      <td>${i.hasPack ? `<select aria-label="담을 도매상" onchange="setRowWs('${i.code}',this.value)" style="padding:6px 8px;${rowWs(i) ? '' : 'color:#8A4B06;border-color:#E3A33B'}">
+          <option value="">${rowWs(i) ? '' : '고르세요'}</option>${D.ws.map(w => `<option value="${w.id}" ${rowWs(i) == w.id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select>` : ''}</td>
+      <td>${c ? `<span class="badge ok">${esc(wsName(c.ws))}에 담김</span>` : ''}</td></tr>`;
+  }).join('') : `<tr><td colspan="9" class="muted" style="padding:20px 16px">${S.q ? `'${esc(S.q)}'에 맞는 약이 없어요. 없는 약이면 "+ 새 약 추가"로 등록하세요.` : S.maker === 'need' ? '지금 주문이 필요한 약이 없어요.' : '등록된 약이 없어요. 업로드 화면에서 eghis 통계를 올려주세요.'}</td></tr>`;
+
+  const selItems = Object.keys(S.sel).filter(k => S.sel[k]).map(k => byCode[k]);
+  document.getElementById('selCount').textContent = selItems.length;
+  const grp = {};
+  selItems.forEach(i => { const w = rowWs(i); const n = w ? wsName(w) : wsName(S.pick) + '(안 고름)'; grp[n] = (grp[n] || 0) + 1; });
+  document.getElementById('selSummary').innerHTML = selItems.length ? '담으면 → ' + Object.entries(grp).map(([n, c]) => `<b style="color:var(--ink)">${esc(n)} ${c}</b>`).join(' · ') : '표에서 약을 체크하고, 약마다 담을 도매상을 고르세요.';
+  document.getElementById('wsPick').innerHTML = D.ws.map(w => `<button class="chip ${S.pick == w.id ? 'on' : ''}" onclick="S.pick=${w.id};render()">${esc(w.name)}</button>`).join('');
+  renderCart();
+}
+
+function cartItemHtml(code, c, curWs) {
+  const i = byCode[code] || { name: code, maker: '', packLabel: '' };
+  const others = D.ws.filter(w => w.id != curWs);
+  return `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line2);gap:8px;flex-wrap:nowrap">
+    <div class="grow" style="min-width:0"><div style="font-weight:500">${esc(i.name)}</div><div class="muted small">${esc(i.maker)} · ${esc(i.packLabel)}</div></div>
+    <span class="step"><button aria-label="한 통 줄이기" onclick="chg('${code}',-1)">−</button><span class="v">${c.packs}</span><button aria-label="한 통 늘리기" onclick="chg('${code}',1)">+</button></span>
+    <select aria-label="다른 도매상으로 옮기기" title="다른 도매상으로 옮기기" onchange="moveCart('${code}', this.value)" style="padding:6px 4px;width:44px;font-size:12px"><option value="">↪</option>${others.map(w => `<option value="${w.id}">${esc(w.name)}(으)로</option>`).join('')}</select>
+    <button aria-label="장바구니에서 빼기" style="width:36px;min-height:36px;height:36px;padding:0" onclick="removeCart('${code}')">${XMARK}</button></div>`;
+}
+function renderCart() {
+  const inCart = id => Object.entries(S.cart).filter(([, c]) => c.ws == id);
+  const all = Object.entries(S.cart);
+  const packs = list => list.reduce((a, [, c]) => a + (c.packs || 0), 0);
+  document.getElementById('cartTotal').textContent = `전체 ${all.length}품목 · ${packs(all)}통`;
+  document.getElementById('cartTabs').innerHTML = `<button class="${S.tab === 'all' ? 'on' : ''}" onclick="S.tab='all';renderCart()">전체 ${all.length}</button>` +
+    D.ws.map(w => `<button class="${S.tab == w.id ? 'on' : ''}" onclick="S.tab=${w.id};renderCart()">${esc(w.name)} ${inCart(w.id).length}</button>`).join('');
+  const live = all.filter(([, c]) => c.packs > 0);
+  const nws = new Set(live.map(([, c]) => String(c.ws))).size;
+  document.getElementById('finBox').innerHTML = live.length
+    ? `<button class="primary big fin-btn" onclick="openSheet()"><span>다 담았어요 · 카톡 주문서 만들기</span><span class="fin-sub">${nws}곳 · ${live.length}품목</span></button>`
+    : '';
+  if (S.tab === 'all') {
+    const groups = D.ws.map(w => [w, inCart(w.id)]).filter(([, l]) => l.length);
+    document.getElementById('cartItems').innerHTML = groups.length
+      ? `<div class="row" style="padding:10px 0;gap:6px">${groups.map(([w, l]) => `<button class="chip" onclick="S.tab=${w.id};renderCart()">${esc(w.name)} <b>${l.length}품목</b> · ${packs(l)}통 →</button>`).join('')}</div>` +
+        groups.map(([w, l]) => `<div class="row between" style="padding:12px 0 4px;border-bottom:2px solid var(--line)">
+            <b>${esc(w.name)}</b><span class="muted small">${l.length}품목 · ${packs(l)}통 · <a href="#" onclick="S.tab=${w.id};renderCart();return false">이 도매상만 보기</a></span></div>` +
+          l.map(([code, c]) => cartItemHtml(code, c, w.id)).join('')).join('')
+      : '<p class="muted" style="margin:14px 0">아직 담긴 약이 없어요. 왼쪽에서 약을 골라 담아주세요.</p>';
+    return;
+  }
+  const list = inCart(S.tab);
+  const others = D.ws.filter(w => w.id != S.tab);
+  const moveAll = list.length && others.length ? `<div class="row" style="padding:10px 0;border-bottom:1px solid var(--line2);gap:6px;flex-wrap:nowrap">
+      <span class="muted small" style="white-space:nowrap">이 장바구니 전체를</span>
+      <select id="moveAllTo" style="padding:6px 8px">${others.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('')}</select>
+      <span class="muted small">(으)로</span><button style="min-height:36px;padding:6px 10px;font-size:13px" onclick="moveCart(null, document.getElementById('moveAllTo').value)">옮기기</button></div>` : '';
+  document.getElementById('cartItems').innerHTML = moveAll + (list.length ? list.map(([code, c]) => cartItemHtml(code, c, S.tab)).join('')
+    : '<p class="muted" style="margin:14px 0">이 도매상 장바구니는 비어 있어요.</p>');
+}
+
+function buildMsg(wsId) {
+  const m = D.msg[wsId]; if (!m) return '';
+  const lines = Object.entries(S.cart).filter(([, c]) => c.ws == wsId && c.packs > 0)
+    .map(([code, c]) => m.line.replaceAll('{주문명}', (byCode[code] || {}).name || code).replaceAll('{통}', c.packs));
+  return `${m.header.trimEnd()}\n\n${lines.length ? lines.join('\n') : '(담긴 약 없음)'}\n${m.footer.replace(/^\n+/, '')}`;
+}
+
+function rowWs(i) {
+  if (S.cart[i.code]) return +S.cart[i.code].ws;  // 장바구니에 담긴 약은 담긴 도매상을 보여줌
+  const v = S.rowWs[i.code] !== undefined ? S.rowWs[i.code] : i.pref;
+  return v && D.ws.find(w => w.id == v) ? +v : null;
+}
+async function setRowWs(code, v) {
+  S.rowWs[code] = v ? +v : null;
+  if (S.cart[code] && v) await moveCart(code, v);  // 이미 담긴 약이면 장바구니도 같이 옮김
+  render();
+  // 다음에도 같은 도매상이 기본으로 잡히게 '자주 담는 도매상'으로 저장
+  const j = await post('/api/drug/' + encodeURIComponent(code), { pref_ws: v || '' });
+  if (j.ok) byCode[code].pref = v ? +v : null;
+}
+function sortBy(k) {
+  if (S.sortKey === k) { if (S.sortDir > 0) S.sortDir = -1; else { S.sortKey = null; S.sortDir = 1; } }  // 오름 → 내림 → 원래 순서
+  else { S.sortKey = k; S.sortDir = 1; }
+  render();
+}
+function toggleMakers() { S.makersOpen = !S.makersOpen; try { localStorage.setItem('makersOpen', S.makersOpen ? '1' : '0'); } catch (e) {} render(); }
+function toggle(code) { S.sel[code] = !S.sel[code]; render(); }
+// 표 머리의 전체 선택: 지금 보이는 약(검색·탭 적용) 중 포장단위가 있고 아직 장바구니에 없는 약
+function selectable() { return (S.vis || []).filter(i => i.hasPack && !S.cart[i.code]); }
+function selAllBtn() {
+  const v = selectable(), n = v.filter(i => S.sel[i.code]).length;
+  const all = v.length && n === v.length, some = n > 0 && !all;
+  const icon = some ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg>' : CHECK;
+  return `<button class="cb ${all || some ? 'on' : ''}" ${v.length ? '' : 'disabled'} aria-label="${all ? '보이는 약 선택 모두 해제' : '보이는 약 모두 선택'}" title="${all ? '모두 해제' : '보이는 약 모두 선택'}" onclick="toggleAll()">${icon}</button>`;
+}
+function toggleAll() {
+  const v = selectable(), all = v.length && v.every(i => S.sel[i.code]);
+  v.forEach(i => { if (all) delete S.sel[i.code]; else S.sel[i.code] = true; });
+  render();
+}
+async function chg(code, d) {
+  if (S.cart[code]) {
+    S.cart[code].packs = Math.max(0, S.cart[code].packs + d);
+    render();
+    await post('/api/cart', { items: [{ code, ws: S.cart[code].ws, packs: S.cart[code].packs }] });
+  } else {
+    S.over[code] = Math.max(0, qtyOf(byCode[code]) + d); render();
+  }
+}
+async function setPack(code, v) {
+  if (!(+v > 0)) return;
+  const j = await post('/api/drug/' + encodeURIComponent(code), { pack: v });
+  if (j.ok) { const i = byCode[code]; i.hasPack = true; i.pack = +v; i.packLabel = v + 'T'; toast('포장단위를 저장했어요.'); render(); }
+}
+function selectNeeded() {
+  const vis = (S.maker === 'all' || S.maker === 'need') ? D.items : D.items.filter(i => i.maker === S.maker);
+  vis.forEach(i => { if (i.sugg > 0 && !S.cart[i.code]) S.sel[i.code] = true; }); render();
+}
+async function addTo(fn) {
+  const codes = Object.keys(S.sel).filter(k => S.sel[k]);
+  if (!codes.length) { toast('먼저 약을 골라주세요.'); return; }
+  const items = [];
+  const skipped = [];
+  codes.forEach(code => { const ws = fn(byCode[code]); if (ws) items.push({ code, ws, packs: qtyOf(byCode[code]) }); else skipped.push(byCode[code].name); });
+  const zero = items.filter(it => it.packs === 0);
+  if (zero.length && !confirm(`수량이 0통인 약이 ${zero.length}개 있어요. 그래도 담을까요? (+ 버튼으로 수량을 먼저 정할 수 있어요)`)) return;
+  if (!items.length) { toast('자주 담는 도매상이 정해진 약이 없어요.'); return; }
+  const j = await post('/api/cart', { items });
+  if (!j.ok) return;
+  items.forEach(it => { S.cart[it.code] = { ws: it.ws, packs: it.packs }; delete S.sel[it.code]; });
+  S.tab = new Set(items.map(it => it.ws)).size > 1 ? 'all' : items[0].ws;
+  const per = {}; items.forEach(it => per[wsName(it.ws)] = (per[wsName(it.ws)] || 0) + 1);
+  render();
+  toast('담았어요: ' + Object.entries(per).map(([n, c]) => `${n} ${c}`).join(', '));
+}
+function addToCart() { addTo(i => rowWs(i) || S.pick); }
+async function moveCart(code, ws) {
+  if (!ws) return;
+  const codes = code ? [code] : Object.keys(S.cart).filter(k => S.cart[k].ws == S.tab);
+  const items = codes.map(k => ({ code: k, ws: +ws, packs: S.cart[k].packs }));
+  const j = await post('/api/cart', { items });
+  if (!j.ok) return;
+  items.forEach(it => S.cart[it.code].ws = it.ws);
+  toast(`${items.length}품목을 ${wsName(ws)} 장바구니로 옮겼어요.`);
+  if (!code && S.tab !== 'all') S.tab = +ws;
+  render();
+}
+async function setCheckedWs() {
+  const codes = Object.keys(S.sel).filter(k => S.sel[k] && byCode[k].hasPack);
+  if (!codes.length) { toast('먼저 약을 체크해 주세요.'); return; }
+  codes.forEach(k => { S.rowWs[k] = S.pick; byCode[k].pref = S.pick; });
+  render();
+  for (const k of codes) await post('/api/drug/' + encodeURIComponent(k), { pref_ws: S.pick });
+  toast(`${codes.length}품목의 담을 도매상을 ${wsName(S.pick)}(으)로 바꿨어요.`);
+}
+async function removeCart(code) { const j = await post('/api/cart/remove', { code }); if (j.ok) { delete S.cart[code]; render(); } }
+// 카톡 주문서: 장바구니를 다 채운 뒤 한 번에 열어서 도매상별로 복사·확정
+const SH = { open: false, copied: {}, done: {}, any: false };
+function sheetWs() { return D.ws.filter(w => SH.done[w.id] || Object.values(S.cart).some(c => c.ws == w.id && c.packs > 0)); }
+function openSheet() {
+  const nopack = Object.entries(S.cart).filter(([code, c]) => c.packs > 0 && !(byCode[code] || {}).hasPack).map(([code]) => byCode[code].name);
+  if (nopack.length) { toast('포장단위가 없는 약이 있어요: ' + nopack.join(', ')); return; }
+  SH.open = true; SH.copied = {}; renderSheet();
+  document.getElementById('sheet').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function closeSheet() {
+  document.getElementById('sheet').style.display = 'none';
+  document.body.style.overflow = '';
+  SH.open = false;
+  if (SH.any) location.reload();  // 확정한 주문이 있으면 추정 재고·입고 대기를 새로 계산
+}
+function renderSheet() {
+  const list = sheetWs();
+  const n = list.filter(w => SH.done[w.id]).length;
+  document.getElementById('sheetProg').textContent = `${n} / ${list.length} 확정`;
+  document.getElementById('sheetCards').innerHTML = list.map(w => {
+    const done = SH.done[w.id];
+    const msg = done ? SH.done[w.id] : buildMsg(w.id);
+    const cnt = done ? '' : Object.values(S.cart).filter(c => c.ws == w.id && c.packs > 0).length + '품목';
+    return `<div class="sheet-card${done ? ' done' : ''}">
+      <div class="row between"><b style="font-size:18px">${esc(w.name)}</b><span class="muted small">${cnt}</span></div>
+      <div class="msg" style="flex:1">${esc(msg)}</div>
+      ${done ? `<button class="big" disabled data-html2canvas-ignore>${CHECK}주문 확정됨</button>`
+        : `<button class="primary big" id="cp${w.id}" data-html2canvas-ignore onclick="copyWs(${w.id})">${SH.copied[w.id] ? '복사됐어요 ✓ 카톡에 붙여넣기' : '문구 복사'}</button>
+           <button class="outline big" data-html2canvas-ignore onclick="confirmWs(${w.id})">보냈어요 · 주문 확정</button>`}
+    </div>`;
+  }).join('');
+  document.getElementById('sheetDone').innerHTML = list.length && n === list.length
+    ? `<div class="note" style="background:var(--gl);color:#123F34">모두 주문 확정됐어요. 약이 오면 <a href="{{ url_for('main.receive') }}">입고 체크</a>에서 확인하면 돼요. <button class="primary" onclick="closeSheet()" style="margin-left:8px">닫기</button></div>` : '';
+}
+async function copyWs(id) {
+  const ok = await copyText(buildMsg(id));
+  if (ok) { SH.copied[id] = true; renderSheet(); }
+  else toast('자동 복사가 막혔어요. 문구를 길게 눌러 직접 복사해 주세요.');
+}
+async function confirmWs(id) {
+  if (!SH.copied[id] && !confirm(`${wsName(id)} 문구를 아직 복사하지 않았어요. 그래도 주문 확정할까요?`)) return;
+  const msg = buildMsg(id);
+  const j = await post('/api/order/confirm', { ws: id });
+  if (!j.ok) return;
+  SH.done[id] = msg; SH.any = true;
+  for (const [code, c] of Object.entries(S.cart)) if (c.ws == id) delete S.cart[code];
+  toast(`${wsName(id)} 주문을 확정했어요.`);
+  renderSheet(); render();
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && SH.open) { if (document.getElementById('shotView')) closeShot(); else closeSheet(); } });
+// 원장님 확인용: 주문서(도매상별 카드)를 이미지 한 장으로 클립보드에 복사
+const CLINIC = {{ (clinic or '')|tojson }};
+function loadH2C() {
+  if (window.html2canvas) return Promise.resolve();
+  return new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = "{{ url_for('static', filename='vendor/html2canvas.min.js') }}"; sc.onload = ok; sc.onerror = no; document.head.appendChild(sc); });
+}
+async function shotSheet() {
+  const btn = document.getElementById('shotBtn'); btn.disabled = true;
+  try {
+    await loadH2C();
+    const t = new Date(), wd = '일월화수목금토'[t.getDay()];
+    const n = sheetWs().reduce((a, w) => a + (SH.done[w.id] ? 0 : Object.values(S.cart).filter(c => c.ws == w.id && c.packs > 0).length), 0);
+    document.getElementById('shotTitle').textContent = `${CLINIC} 약품 주문서 · ${t.getMonth() + 1}/${t.getDate()}(${wd}) ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} · ${sheetWs().length}곳 ${n}품목`;
+    const canvas = await html2canvas(document.getElementById('shotArea'), {
+      backgroundColor: '#F8FAF9', scale: Math.min(2, window.devicePixelRatio || 1) < 1.5 ? 1.5 : 2, logging: false,
+      onclone: doc => { doc.querySelectorAll('.shot-only').forEach(el => el.style.display = 'block'); const a = doc.getElementById('shotArea'); a.style.padding = '16px'; }
+    });
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    try {
+      if (!navigator.clipboard || !window.ClipboardItem) throw new Error('no clipboard');
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      toast('주문서 이미지를 복사했어요. 원장님 카톡방에 Ctrl+V로 붙여넣으세요.');
+    } catch (e) {
+      showShot(blob);  // 이 PC 브라우저가 이미지 복사를 막으면: 이미지를 띄워서 오른쪽 클릭 복사
+    }
+  } catch (e) {
+    toast('스크린샷을 만들지 못했어요. 화면을 직접 캡처해 주세요.');
+  } finally { btn.disabled = false; }
+}
+function showShot(blob) {
+  const url = URL.createObjectURL(blob), t = new Date();
+  const name = `주문서_${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, '0')}${String(t.getDate()).padStart(2, '0')}_${String(t.getHours()).padStart(2, '0')}${String(t.getMinutes()).padStart(2, '0')}.png`;
+  const v = document.createElement('div');
+  v.id = 'shotView'; v.className = 'sheet-bg'; v.style.zIndex = 60;
+  v.innerHTML = `<div class="sheet" style="max-width:1000px"><div class="row between"><b style="font-size:17px">이미지를 <u>마우스 오른쪽 클릭 → 이미지 복사</u> 한 뒤 카톡에 붙여넣으세요</b>
+      <div class="row" style="gap:8px"><a class="btn" href="${url}" download="${name}">파일로 저장</a><button class="primary" onclick="closeShot()">닫기</button></div></div>
+    <details class="note" style="margin:0"><summary style="cursor:pointer"><b>이 PC에서도 버튼만 누르면 바로 복사되게 하기 (한 번만 설정)</b></summary>
+      <ol style="margin:8px 0 0;padding-left:20px;line-height:1.8">
+        <li>주소창에 <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code> 입력 (엣지는 <code>edge://flags/#unsafely-treat-insecure-origin-as-secure</code>) <button class="chip" onclick="copyText('chrome://flags/#unsafely-treat-insecure-origin-as-secure').then(()=>toast('복사했어요'))">주소 복사</button></li>
+        <li>나오는 칸에 <code>${location.origin}</code> 입력 <button class="chip" onclick="copyText(location.origin).then(()=>toast('복사했어요'))">복사</button> → 오른쪽을 <b>Enabled</b>로</li>
+        <li>아래 <b>[Relaunch / 다시 시작]</b> 누르기. 다음부터는 이 창 없이 바로 복사돼요.</li>
+      </ol></details>
+    <img src="${url}" alt="주문서 스크린샷" style="width:100%;border:1px solid var(--line);border-radius:10px;background:#fff"></div>`;
+  v.onclick = e => { if (e.target === v) closeShot(); };
+  document.body.appendChild(v);
+}
+function closeShot() { const v = document.getElementById('shotView'); if (v) v.remove(); }
+render();
+</script>
+{% endblock %}

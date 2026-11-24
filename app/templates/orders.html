@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}지난 주문{% endblock %}
+{% block body %}
+<div class="row between"><h1>지난 주문</h1><a class="btn" href="{{ url_for('main.order') }}">← 주문 만들기</a></div>
+<section class="card" style="overflow:hidden"><div class="scroll"><table style="min-width:720px">
+  <thead><tr><th>주문일</th><th>도매상</th><th class="r">품목</th><th>카톡 문구</th><th></th></tr></thead>
+  <tbody>
+  {% for o in rows %}
+    <tr><td>{{ o.order_date }}</td><td style="font-weight:500">{{ o.ws }}</td><td class="r">{{ o.n }}</td>
+      <td><details><summary class="muted" style="cursor:pointer">보기</summary><div class="msg" style="margin-top:6px">{{ o.message }}</div></details></td>
+      <td class="r"><button class="danger" onclick="del({{ o.id }})">주문 취소</button></td></tr>
+  {% else %}<tr><td colspan="5" class="muted">아직 확정한 주문이 없어요.</td></tr>{% endfor %}
+  </tbody>
+</table></div></section>
+<p class="muted small">주문 취소는 아직 입고 확인을 하나도 안 한 주문만 할 수 있어요. 일부가 들어온 뒤 나머지를 취소하려면 미송분 화면에서 "미송 취소"를 쓰세요.</p>
+{% endblock %}
+{% block script %}
+<script>
+async function del(id) {
+  if (!confirm('이 주문을 지울까요? 입고 대기 목록에서도 빠져요.')) return;
+  const j = await post(`/api/order/${id}/delete`);
+  if (j.ok) location.reload();
+}
+</script>
+{% endblock %}

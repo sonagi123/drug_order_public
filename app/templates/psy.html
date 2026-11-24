@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}향정 관리{% endblock %}
+{% block body %}
+<h1>향정 관리</h1>
+<div class="tabs">
+  <a class="on" href="{{ url_for('main.psy') }}">오늘 기록</a>
+  <a href="{{ url_for('main.psy_review') }}">기록 보기</a>
+</div>
+<div class="row between" style="align-items:flex-end">
+  <div>
+    <p class="sub">진료가 끝나면 향정 약마다 <b>그날 쓴 양</b>을 적어요. 잔량 = 전날 잔량 + 입고 체크에서 들어온 양 − 오늘 사용량. 향정은 처방 통계로 재고를 빼지 않아요.</p>
+  </div>
+  <div class="row" id="people" style="gap:6px"></div>
+</div>
+
+<div class="card pad row" style="gap:10px;align-items:center;border:2px solid var(--g)">
+  <a class="btn" href="?d={{ data.week[5] }}" onclick="go('{{ data.week[5] }}');return false" aria-label="전날" style="width:44px;padding:0">‹</a>
+  <label class="row" style="gap:8px"><b>기록일</b><input type="date" value="{{ data.day }}" max="{{ data.today }}" onchange="go(this.value)" style="min-height:44px;font-size:16px"></label>
+  {% if data.day < data.today %}<a class="btn" href="#" onclick="return nextDay()" aria-label="다음 날" style="width:44px;padding:0">›</a>{% endif %}
+  {% if data.day != data.today %}<a class="btn" href="?" onclick="go('{{ data.today }}');return false">오늘로</a>{% endif %}
+  <span class="muted small">그날 쓴 양(정)을 적어요</span>
+  <span class="grow"></span>
+  <b id="prog" style="color:var(--g);font-size:16px"></b>
+</div>
+
+<div id="morning"></div>
+<section class="card" style="overflow:hidden">
+  <div class="psy-row psy-th"><span>약</span><span class="r">전날 잔량</span><span class="r">오늘 입고</span><span>오늘 사용량</span><span class="r">오늘 잔량</span></div>
+  <div id="rows"></div>
+  <div class="row between savebar" style="padding:14px 18px;border-top:1px solid var(--line);background:#F8FAF9">
+    <span class="muted small hide-m">잔량이 1통 아래거나 사용량이 평소의 2배가 넘으면 주황색. 실제 개수와 어긋나면 약품 관리에서 재고를 다시 입력하세요.</span>
+    <button class="primary big" id="saveBtn" onclick="save()"></button>
+  </div>
+</section>
+
+<section style="display:flex;flex-direction:column;gap:8px">
+  <div class="row between">
+    <h2 style="font-size:17px">최근 7일 사용량 (정) · 맨 끝은 그날 잔량</h2>
+    <div class="row" style="gap:6px">
+      <input type="date" id="xFrom" value="{{ data.monthStart }}" max="{{ data.today }}" aria-label="내보낼 시작일">
+      <span class="muted">~</span>
+      <input type="date" id="xTo" value="{{ data.today }}" max="{{ data.today }}" aria-label="내보낼 끝일">
+      {% if data.first %}<button class="chip" onclick="document.getElementById('xFrom').value='{{ data.first }}'">처음부터</button>{% endif %}
+      <button onclick="location.href='{{ url_for('main.psy_xlsx') }}?from='+document.getElementById('xFrom').value+'&to='+document.getElementById('xTo').value">엑셀로 내보내기</button>
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto"><div id="hist"></div></div>
+</section>
+{% endblock %}
+{% block script %}
+<script>
+const D = {{ data|tojson }};
+const S = { who: savedStaff(), v: {} };
+D.rows.forEach(r => { S.v[r.code] = r.qty == null ? '' : String(r.qty); });
+const md = d => `${+d.slice(5, 7)}/${+d.slice(8)}`;
+function go(d) { if (dirty() && !confirm('저장하지 않은 입력이 있어요. 그래도 날짜를 바꿀까요?')) return; location.href = '?d=' + d; }
+function nextDay() { const t = new Date(D.day + 'T00:00:00'); t.setDate(t.getDate() + 1); go(t.toISOString().slice(0, 10)); return false; }
+function dirty() { return D.rows.some(r => (r.qty == null ? '' : String(r.qty)) !== String(S.v[r.code]).trim()); }
+function pickWho(n) { S.who = n; saveStaff(n); render(); }
+const num = x => String(x).trim() === '' ? null : +String(x).replace(/,/g, '');
+function left(r) {
+  if (r.baseToday) return r.baseQty;
+  if (r.prev == null) return null;
+  return r.prev + r.in - (num(S.v[r.code]) || 0);
+}
+function rowHtml(r) {
+  const u = num(S.v[r.code]), l = left(r);
+  const odd = r.pack && l != null && (l < r.pack || (u != null && r.usual > 0 && u > r.usual * 2));
+  const cls = r.baseToday ? '' : odd ? 'warn' : u != null ? 'done' : '';
+  const inp = r.baseToday
+    ? '<span class="muted small">이날 진료 끝난 뒤 재고로 입력돼 있어서 사용량은 안 적어도 돼요</span>'
+    : r.prev == null
+      ? '<span class="small" style="color:var(--amb)">기준 재고가 없어요 · 약품 관리에서 먼저 재고 입력</span>'
+      : `<input class="psy-in" inputmode="decimal" enterkeyhint="next" data-code="${esc(r.code)}" value="${esc(S.v[r.code])}" aria-label="${esc(r.name)} 오늘 사용량"
+          oninput="S.v['${r.code}']=this.value;upd('${r.code}')" onkeydown="nextIn(event,this)"><span class="muted">${esc(r.unit)}</span>
+         <span class="muted small">평소 ${r.usual}${esc(r.unit)}</span>`;
+  return `<div class="psy-row ${cls}" id="p_${esc(r.code)}">
+    <div style="min-width:0"><div style="font-size:16px;font-weight:500">${esc(r.name)}</div><div class="muted small">${r.pack ? `1통 = ${r.pack}${esc(r.unit)}` : '포장 미입력'}</div></div>
+    <span class="r"><span class="m-lbl">전날 </span>${r.prev == null ? '—' : fmt(r.prev) + esc(r.unit)}</span>
+    <span class="r" style="color:${r.in ? 'var(--g)' : 'var(--mut)'}"><span class="m-lbl">입고 </span>${r.in ? '+' + fmt(r.in) : '-'}</span>
+    <div class="row" style="gap:6px;flex-wrap:nowrap">${inp}</div>
+    <span class="r psy-left"><span class="m-lbl">잔량 </span><b style="font-size:16px;color:${odd ? 'var(--amb)' : 'var(--ink)'}">${l == null ? '—' : fmt(l) + esc(r.unit)}</b>${l != null && r.pack ? `<div class="muted small">≈ ${fmt(l / r.pack, 1)}통</div>` : ''}</span>
+  </div>`;
+}
+function upd(code) {
+  const r = D.rows.find(x => x.code === code), el = document.getElementById('p_' + code);
+  const tmp = document.createElement('div'); tmp.innerHTML = rowHtml(r);
+  el.className = tmp.firstElementChild.className;
+  el.querySelector('.psy-left').innerHTML = tmp.firstElementChild.querySelector('.psy-left').innerHTML;
+  head();
+}
+function nextIn(e, el) {
+  if (e.key !== 'Enter') return; e.preventDefault();
+  const all = [...document.querySelectorAll('.psy-in')]; const n = all[all.indexOf(el) + 1]; if (n) { n.focus(); n.select(); }
+}
+function head() {
+  const can = D.rows.filter(r => !r.baseToday && r.prev != null);
+  const n = can.filter(r => num(S.v[r.code]) != null).length;
+  document.getElementById('prog').textContent = `${n} / ${can.length} 입력`;
+  document.getElementById('saveBtn').textContent = `${D.day === D.today ? '오늘' : md(D.day)} 사용량 저장${S.who ? ' (' + S.who + ')' : ''}`;
+}
+function render() {
+  const bt = D.rows.filter(r => r.baseToday).length;
+  document.getElementById('morning').innerHTML = bt ? `<div class="note row between" style="gap:10px">
+    <span><b>${bt}개 약</b>은 ${D.day === D.today ? '오늘' : md(D.day)} 약품 관리에서 재고를 입력해서, 그 숫자를 <b>그날 진료 끝난 뒤 재고</b>로 보고 있어요. 그래서 사용량 칸이 없어요.<br>
+      아침(진료 전)에 센 숫자였다면 [아침에 센 재고로 바꾸기]를 눌러 주세요. 그 숫자가 <b>아침 재고</b>가 되고, 그날 사용량을 적을 수 있어요.</span>
+    <button class="primary" onclick="toMorning()">아침에 센 재고로 바꾸기</button></div>` : '';
+  document.getElementById('people').innerHTML = peopleHtml(D.staff, S.who, 'pickWho', '기록하는 사람');
+  document.getElementById('rows').innerHTML = D.rows.length ? D.rows.map(rowHtml).join('')
+    : '<div class="pad muted">향정으로 표시된 약이 없어요. 약품 관리에서 향정 칸을 체크하세요.</div>';
+  const days = D.week.map(md);
+  document.getElementById('hist').innerHTML = `<table class="psy-hist"><thead><tr><th>약</th>${days.map((d, k) => `<th class="r">${d}</th>`).join('')}<th class="r">잔량</th></tr></thead><tbody>` +
+    D.rows.map(r => `<tr><td>${esc(r.name)}</td>${r.week.map(v => `<td class="r ${v == null ? 'muted' : ''}">${v == null ? '-' : fmt(v)}</td>`).join('')}<td class="r"><b style="color:var(--g)">${r.now == null ? '—' : fmt(r.now)}</b></td></tr>`).join('') + '</tbody></table>';
+  head();
+}
+async function toMorning() {
+  const bt = D.rows.filter(r => r.baseToday).length;
+  if (!confirm(`${bt}개 약의 ${md(D.day)} 재고를 '아침(진료 전)에 센 재고'로 바꿀까요?\n\n숫자는 그대로이고, 그날 사용량을 적으면 거기서 빠져요.`)) return;
+  const j = await post('/api/psy/base_morning', { date: D.day });
+  if (j.ok) { toast(`${j.count}개 약을 아침 재고로 바꿨어요. 이제 사용량을 적을 수 있어요.`); setTimeout(() => location.reload(), 700); }
+}
+async function save() {
+  if (!S.who) { toast('기록하는 사람을 먼저 골라주세요.'); document.getElementById('people').scrollIntoView({ block: 'center' }); return; }
+  const items = [], bad = [];
+  for (const r of D.rows) {
+    if (r.baseToday || r.prev == null) continue;
+    const t = String(S.v[r.code]).trim();
+    if (t !== '' && (isNaN(num(t)) || num(t) < 0)) { bad.push(r.name); continue; }
+    items.push({ code: r.code, qty: t });
+  }
+  if (bad.length) { toast('숫자가 아닌 칸이 있어요: ' + bad.slice(0, 3).join(', ')); return; }
+  const j = await post('/api/psy/save', { date: D.day, staff: S.who, items });
+  if (j.ok) { toast(`${j.count}개 약의 사용량을 저장했어요.`); D.rows.forEach(r => { r.qty = num(S.v[r.code]); }); setTimeout(() => location.reload(), 700); }
+}
+window.addEventListener('beforeunload', e => { if (dirty()) { e.preventDefault(); e.returnValue = ''; } });
+render();
+</script>
+{% endblock %}

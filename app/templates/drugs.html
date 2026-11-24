@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+{% block title %}약품 관리{% endblock %}
+{% block body %}
+<div class="row between" style="align-items:flex-end">
+  <div>
+    <h1>약품 관리</h1>
+    <div class="usage-note">{% set u = usage_note() %}{% if u %}<b>처방 반영: {% if u.today %}오늘 {% endif %}{{ u.label }}까지</b>{% else %}<b>아직 처방 통계가 없어요</b> · 업로드에서 eghis 통계를 올려 주세요{% endif %}</div>
+    <p class="sub m-only">약마다 남은 통 수와 낱알 수를 적고(예: 3통 + 20정, 한쪽만 적어도 돼요), 다 적은 뒤 아래 <b>저장</b>을 한 번만 누르세요. 저장 전에 화면이 새로고침돼도 적은 값은 남아 있어요.</p>
+    <p class="sub hide-m">목표 재고는 알약 개수(정)로 입력해요. 옆의 제안값(최근 주평균 × {{ (data.days / 7)|round(1)|replace('.0','') }}주)을 그대로 적용해도 돼요. 칸을 고치면 바로 저장돼요.</p>
+  </div>
+  <div class="row hide-m">
+    <button onclick="document.getElementById('bulk').style.display='flex'">포장단위 일괄 입력</button>
+    <button class="outline" onclick="applyAll()">빈 목표에 제안값 일괄 적용</button>
+    <button class="primary" onclick="openAdd()">+ 새 약 추가</button>
+  </div>
+</div>
+
+<section class="card pad" id="bulk" style="display:none;flex-direction:column;gap:10px">
+  <div class="row between"><h2>포장단위 일괄 입력</h2><button style="border:0" onclick="document.getElementById('bulk').style.display='none'" aria-label="닫기">✕</button></div>
+  <p class="muted" style="margin:0;line-height:1.6">한 줄에 하나씩 <b>약 이름 = 1통에 든 개수 (단위)</b>로 적어 붙여넣으세요. 약 이름은 약품 관리에 보이는 이름 그대로 쓰면 돼요. 단위는 정·캡슐·펜 중 하나이고, 생략하면 정으로 봐요.<br>예) <code>파마주석산졸피뎀정 = 100</code> · <code>아토목신캡슐25mg = 100 캡슐</code> · <code>마운자로프리필드펜주2.5mg/0.5밀리리터 = 1 펜</code></p>
+  <textarea id="bulkText" rows="10" placeholder="약 이름 = 숫자"></textarea>
+  <div class="row"><button class="primary" onclick="bulkPack()">한 번에 넣기</button><span class="muted" id="bulkRes"></span></div>
+</section>
+
+<section class="card" id="add" style="display:none;border:2px solid var(--g);overflow:hidden">
+  <div class="row between" style="padding:0 12px 0 16px;border-bottom:1px solid var(--line)">
+    <div class="tabs" style="border:0" id="addTabs"></div>
+    <button aria-label="닫기" onclick="closeAdd()" style="border:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div id="addSearch" class="pad" style="display:flex;flex-direction:column;gap:10px">
+    <p class="muted" style="margin:0">eghis 사용자등록수가에서 찾아요. 약명·제약사·약가·급여구분은 자동으로 채워져요. (업로드 화면에서 등록수가를 먼저 올려야 해요)</p>
+    <input type="search" id="q" placeholder="약 이름·제약사로 검색" oninput="searchCat()" style="font-size:15px;padding:12px 14px">
+    <div id="catRes"></div>
+  </div>
+  <div id="addManual" class="pad" style="display:none;flex-direction:column;gap:12px">
+    <p class="muted" style="margin:0">등록수가에 없거나 아직 eghis에 등록 전인 약이에요.</p>
+    <div class="grid4">
+      <label class="f" style="grid-column:span 2">약 이름<input id="m_name"></label>
+      <label class="f">제약사<input id="m_maker"></label>
+      <label class="f">카톡 주문명<input id="m_order" placeholder="비우면 약 이름"></label>
+      <label class="f">포장단위 (1통에 몇 정)<input id="m_pack" type="number" min="1"></label>
+      <label class="f">목표 재고 (정)<input id="m_target" type="number" min="0"></label>
+      <label class="f">급여 구분<select id="m_ins"><option value="1">급여</option><option value="0">비급여</option></select></label>
+      <label class="f">약가(급여, 1정) / 매입가(비급여, 1통)<input id="m_price" type="number" min="0"></label>
+      <label class="f">자주 담는 도매상<select id="m_pref"><option value="">지정 안 함</option>{% for w in data.ws %}<option value="{{ w.id }}">{{ w.name }}</option>{% endfor %}</select></label>
+      <label class="row" style="padding-top:20px"><input type="checkbox" id="m_psy" style="width:20px;height:20px"> 향정 약품</label>
+    </div>
+    <div class="row" style="justify-content:flex-end"><button onclick="closeAdd()">취소</button><button class="primary" onclick="addManual()">저장</button></div>
+  </div>
+</section>
+
+<div class="tabs hide-m" id="modeTabs"></div>
+<div class="card pad" id="stockBar" style="display:none;position:sticky;top:8px;z-index:5;flex-wrap:wrap;gap:10px;align-items:center;border:2px solid var(--g)">
+  <b>재고 일괄 입력</b>
+  <span class="muted small">통 칸과 정(낱알) 칸에 나눠 적으면 합쳐서 저장해요. 예: 3통 + 20정</span>
+  <label class="row" style="gap:6px"><span class="muted small">기준일</span><input type="date" class="sdate" onchange="setSdate(this.value)" style="padding:6px 8px"></label>
+  <span class="muted small sdateHelp"></span>
+  <span class="grow"></span>
+  <span class="muted small" id="stockCount"></span>
+  <button onclick="clearStock()">입력 지우기</button>
+  <button class="primary" onclick="saveStock()">입력한 재고 한 번에 저장</button>
+</div>
+<div class="row" id="filterRow">
+  <div class="row" id="filters" style="gap:6px"></div>
+  <span class="grow"></span>
+  <input type="search" id="find" placeholder="약 이름·제약사 검색" oninput="render()" style="min-width:220px">
+</div>
+<div class="row" id="wsFilter" style="gap:6px"></div>
+<div class="card pad hide-m bulkbar" id="bulkBar" style="display:none"></div>
+<section class="card pad m-only" id="mDate">
+  <label class="row" style="gap:8px;flex-wrap:nowrap"><b style="white-space:nowrap">기준일</b><input type="date" class="sdate" onchange="setSdate(this.value)" style="flex:1;font-size:16px;min-height:44px"></label>
+  <div class="muted small sdateHelp" style="margin-top:6px"></div>
+</section>
+<section class="card m-only" id="mList"></section>
+<div class="m-only m-savebar" id="mSave">
+  <span id="mCount" class="muted small">아직 입력 없음</span>
+  <button onclick="clearStock()">지우기</button>
+  <button class="primary" onclick="saveStock()">저장</button>
+</div>
+<section class="card hide-m" style="overflow:hidden">
+  <div class="scroll"><table style="min-width:1180px" class="drug-edit">
+    <thead id="thead"><tr><th style="width:44px" id="selAllTh"></th><th>약품 / 카톡 주문명</th><th>자주 담는 도매상</th><th>포장 (1통=정)</th><th class="r">주평균</th><th>목표 재고 (정)</th><th class="r" style="white-space:nowrap">추정 재고 · 바로 입력</th><th>구분 · 단가</th><th class="c">향정</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+</section>
+<div class="grid3 muted hide-m" style="line-height:1.6">
+  <div class="card pad"><span class="tag ledger">원장</span> 도매상 매출원장 PDF에서 자동으로 채운 포장단위예요.</div>
+  <div class="card pad"><span class="tag manual">수기</span> 직접 입력한 값이에요. 원장을 다시 올려도 덮어쓰지 않아요.</div>
+  <div class="card pad"><b style="color:var(--ink)">자주 담는 도매상</b>은 주문 화면의 "자주 담는 곳으로" 버튼에서 쓰는 기본값이에요.</div>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+const D = {{ data|tojson }};
+const MOBILE = matchMedia('(max-width:640px)').matches;
+const TODAY = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const S = { f: 'all', ws: 'all', sel: {}, addTab: 'search', mode: MOBILE ? 'stock' : 'edit', stock: {}, sdate: TODAY };
+// 저장 전 입력값은 이 기기에 임시로 보관 (새로고침해도 남게)
+const DRAFT = 'drugStockDraft';
+// 재고 입력값: S.stock[code] = { p: 통, u: 정(낱알) }  — 둘 다 적으면 합침
+const blank = v => String(v ?? '').trim() === '';
+const filled = v => v && (!blank(v.p) || !blank(v.u));
+function stkOf(code) { return S.stock[code] || { p: '', u: '' }; }
+function saveDraft() { try { localStorage.setItem(DRAFT, JSON.stringify({ v: 2, stock: S.stock, sdate: S.sdate })); } catch (e) {} }
+function loadDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT) || 'null');
+    if (d && d.stock && d.v !== 2) {  // 예전 형식(칸 하나) → 통 칸으로
+      for (const k in d.stock) d.stock[k] = { p: d.unit === 'unit' ? '' : d.stock[k], u: d.unit === 'unit' ? d.stock[k] : '' };
+    }
+    if (d && d.stock && Object.values(d.stock).some(filled)) {
+      S.stock = d.stock; S.mode = 'stock';
+      if (d.sdate && d.sdate <= TODAY) S.sdate = d.sdate;
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+function dropDraft() { try { localStorage.removeItem(DRAFT); } catch (e) {} }
+function sdateLabel(v) {
+  const dt = new Date(v + 'T00:00:00'), w = '일월화수목금토'[dt.getDay()];
+  return `${dt.getMonth() + 1}월 ${dt.getDate()}일(${w})`;
+}
+function setSdate(v) {
+  if (!v || v > TODAY) { toast('기준일은 오늘이나 지난 날짜로 골라주세요.'); v = TODAY; }
+  S.sdate = v; showSdate(); saveDraft();
+}
+function showSdate() {
+  document.querySelectorAll('input.sdate').forEach(el => { el.value = S.sdate; el.max = TODAY; });
+  const t = `${S.sdate === TODAY ? '오늘' : sdateLabel(S.sdate)} 진료가 끝난 뒤 남은 수량으로 적어주세요. 다음 날부터의 처방·입고만 빼고 더해요.`;
+  document.querySelectorAll('.sdateHelp').forEach(el => el.textContent = t);
+}
+function setStk(code, part, v) {
+  const o = { ...stkOf(code), [part]: v };
+  if (filled(o)) S.stock[code] = o; else delete S.stock[code];
+  countStock(); saveDraft();
+  document.querySelectorAll(`[data-row="${CSS.escape(code)}"]`).forEach(el => el.classList.toggle('done', filled(o)));
+}
+// 통 칸 + 정 칸 (포장단위가 없는 약은 정 칸만)
+function stkInputs(r, big) {
+  const o = stkOf(r.code), w = big ? '' : 'style="width:72px;font-size:16px;text-align:right"';
+  const inp = (part, ph) => `<input class="stk" data-code="${esc(r.code)}" inputmode="decimal" enterkeyhint="next" value="${esc(o[part])}" ${w}
+      aria-label="${esc(r.name)} ${ph}" oninput="setStk('${r.code}','${part}',this.value)" onkeydown="nextStk(event,this)">`;
+  return r.pack
+    ? `${inp('p', '통')}<span class="m-u">통</span><span class="m-plus">+</span>${inp('u', '낱알')}<span class="m-u">${esc(r.unit)}</span>`
+    : `${inp('u', '낱알')}<span class="m-u">${esc(r.unit)}</span>`;
+}
+const HEAD_EDIT = document.getElementById('thead').innerHTML;
+const row = code => D.rows.find(r => r.code === code);
+
+function rowHtml(r) {
+  const daysT = r.target != null && r.daily > 0 ? `약 ${fmt(r.target / r.daily / 7, 1)}주분` : '';
+  const packsT = r.target != null && r.pack ? ` · 약 ${fmt(r.target / r.pack, 1)}통` : '';
+  const src = r.pack ? (r.packSrc === 'ledger' ? '<span class="tag ledger">원장</span>' : '<span class="tag manual">수기</span>') : '<span class="tag none">미입력</span>';
+  return `<tr id="r_${esc(r.code)}" class="${S.sel[r.code] ? 'sel' : ''}" style="${r.active ? '' : 'opacity:.5'}">
+    <td><button class="cb ${S.sel[r.code] ? 'on' : ''}" aria-label="선택" onclick="toggleSel('${r.code}')">${CHECK}</button></td>
+    <td style="min-width:260px"><div class="row" style="gap:6px;font-weight:500">${r.isNew ? '<span class="tag new">신규</span>' : ''}${r.psy ? '<span class="tag psy">향정</span>' : ''}<span title="${esc(r.full)}">${esc(r.name)}</span>${r.aliases ? `<span class="muted small" title="eghis에 같은 제품 코드가 ${r.aliases + 1}개 있어 사용량을 합쳐서 계산해요">코드 ${r.aliases + 1}개 합침</span>` : ''}</div>
+      <div class="muted small" style="margin-top:4px">${esc(r.maker)} · 카톡: <input class="w" value="${esc(r.orderName)}" onchange="save('${r.code}',{order_name:this.value})" aria-label="카톡 주문명"></div></td>
+    <td><select onchange="save('${r.code}',{pref_ws:this.value})" aria-label="자주 담는 도매상"><option value="">지정 안 함</option>${D.ws.map(w => `<option value="${w.id}" ${r.pref == w.id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></td>
+    <td><div class="row" style="gap:6px;flex-wrap:nowrap"><input type="number" min="0" value="${r.pack || ''}" onchange="save('${r.code}',{pack:this.value})" aria-label="포장단위">${src}</div><div class="muted small">${esc(r.packLabel)}</div></td>
+    <td class="r">${r.daily ? fmt(r.daily * 7, r.daily * 7 < 10 ? 1 : 0) + esc(r.unit) : '<span class="muted small">기록 없음</span>'}</td>
+    <td><div class="row" style="gap:6px;flex-wrap:nowrap"><input type="number" min="0" value="${r.target ?? ''}" onchange="save('${r.code}',{target:this.value})" aria-label="목표 재고" style="width:90px">
+      ${r.sugg != null && r.sugg !== r.target ? `<button class="chip" style="font-size:12px;min-height:32px;padding:4px 10px" onclick="save('${r.code}',{target:${r.sugg}})">제안 ${fmt(r.sugg)} 적용</button>` : ''}</div>
+      <div class="muted small">${r.target == null ? (r.pack ? '목표 미입력' : '포장단위를 먼저 입력하세요') : daysT + packsT}</div></td>
+    <td class="r" style="min-width:200px">${r.est == null ? '—' : fmt(r.est) + esc(r.unit)}${r.est != null && r.pack ? `<div class="muted small">≈ ${fmt(r.est / r.pack, 1)}통</div>` : ''}<div>${daysBadge(r.daysLeft)}</div>
+      <div class="row qs" data-code="${esc(r.code)}" style="gap:4px;justify-content:flex-end;flex-wrap:nowrap;margin-top:4px" onfocusout="qsLeave(this)">${r.pack
+        ? `<input class="qp" inputmode="decimal" aria-label="실제 재고 통" placeholder="통" onkeydown="qsKey(event,this)"><span class="muted small">통+</span>`
+        : ''}<input class="qu" inputmode="decimal" aria-label="실제 재고 낱알" placeholder="${r.pack ? '낱알' : (r.psy ? '실사' : '실제')}" onkeydown="qsKey(event,this)"><span class="muted small">${esc(r.unit)}</span></div></td>
+    <td>${r.insured ? `급여<div class="muted small">약가 ${fmt(r.price)}원/${esc(r.unit)}</div>`
+      : `비급여<div class="row small" style="gap:4px;flex-wrap:nowrap">매입 <input type="number" min="0" value="${r.buy ?? ''}" placeholder="통당" onchange="save('${r.code}',{buy_price:this.value})" style="width:100px;${r.buy == null ? 'border-color:#E3A33B;background:#FFFBF3' : ''}">원</div>`}</td>
+    <td class="c"><input type="checkbox" ${r.psy ? 'checked' : ''} onchange="save('${r.code}',{psy:this.checked})" style="width:20px;height:20px" aria-label="향정"></td>
+    <td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="chip" style="font-size:12px;min-height:32px" onclick="save('${r.code}',{active:${r.active ? 0 : 1}})">${r.active ? '숨기기' : '다시 쓰기'}</button>
+      <button class="del-btn" style="width:36px;min-width:36px;height:36px;min-height:36px" aria-label="약 삭제" title="약 삭제" onclick="delDrug('${r.code}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button></div></td></tr>`;
+}
+// 약 정보 편집의 바로 입력: [통] + [낱알] — Enter 또는 칸 밖으로 나가면 저장
+function qsKey(e, el) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const box = el.closest('.qs');
+  if (el.classList.contains('qp') && box.querySelector('.qu')) { box.querySelector('.qu').focus(); return; }
+  quickStock(box);
+}
+function qsLeave(box) { setTimeout(() => { if (!box.contains(document.activeElement)) quickStock(box); }, 0); }
+async function quickStock(box) {
+  if (box.dataset.busy) return;
+  const code = box.dataset.code, r = row(code);
+  const pv = (box.querySelector('.qp') || {}).value || '', uv = box.querySelector('.qu').value || '';
+  if (!pv.trim() && !uv.trim()) return;
+  const num = x => x.trim() ? +x.replace(/,/g, '').trim() : 0;
+  const q = Math.round((num(pv) * (r.pack || 0) + num(uv)) * 100) / 100;  // 반알(0.5) 그대로
+  if (isNaN(q) || q < 0) { toast('숫자만 적어주세요. 예: 3통 + 20'); return; }
+  box.dataset.busy = '1';
+  const j = await post('/api/drug/' + encodeURIComponent(code) + '/stock', { qty: q });
+  delete box.dataset.busy;
+  if (!j.ok) return;
+  r.est = q; r.daysLeft = r.daily > 0 ? q / r.daily : null;
+  toast(`${r.name} 재고를 ${fmt(q)}${r.unit}${r.pack ? ` (${fmt(q / r.pack, 1)}통)` : ''}으로 맞췄어요.`);
+  const tr = document.getElementById('r_' + code); if (tr) tr.outerHTML = rowHtml(r);
+}
+function stockRowHtml(r) {
+  const est = r.est == null ? '—' : fmt(r.est) + esc(r.unit) + (r.pack ? ` <span class="muted small">(≈ ${fmt(r.est / r.pack, 1)}통)</span>` : '');
+  return `<tr data-row="${esc(r.code)}" class="${filled(S.stock[r.code]) ? 'done' : ''}"><td style="min-width:260px"><div class="row" style="gap:6px;font-weight:500">${r.psy ? '<span class="tag psy">향정</span>' : ''}<span>${esc(r.name)}</span></div><div class="muted small">${esc(r.maker)}</div></td>
+    <td>${r.pack ? `1통 = ${r.pack}${esc(r.unit)}` : '<span class="tag none">포장 미입력</span>'}</td>
+    <td class="r">${est}</td>
+    <td><div class="row stk-pair" style="gap:6px;flex-wrap:nowrap">${stkInputs(r)}${r.pack ? '' : '<span class="small" style="color:var(--amb)">포장단위가 없어 낱알로만 받아요</span>'}</div></td></tr>`;
+}
+function mRowHtml(r) {
+  return `<div class="m-stk${filled(S.stock[r.code]) ? ' done' : ''}" data-row="${esc(r.code)}"><span class="m-nm">${r.psy ? '<span class="tag psy">향정</span> ' : ''}${esc(r.name)}</span>
+    <span class="m-in">${stkInputs(r, true)}</span></div>`;
+}
+function nextStk(e, el) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const all = [...document.querySelectorAll('input.stk')];
+  const n = all[all.indexOf(el) + 1]; if (n) { n.focus(); n.select(); }
+}
+function countStock() {
+  const n = Object.values(S.stock).filter(filled).length;
+  document.getElementById('stockCount').textContent = n ? `${n}개 입력됨` : '';
+  document.getElementById('mCount').innerHTML = n ? `<b style="color:var(--ink)">${n}개</b> 입력됨` : '아직 입력 없음';
+}
+function clearStock() {
+  if (Object.values(S.stock).some(filled) && !confirm('입력한 값을 모두 지울까요?')) return;
+  S.stock = {}; S.sdate = TODAY; dropDraft(); render();
+}
+window.addEventListener('beforeunload', e => {
+  if (Object.values(S.stock).some(filled)) { e.preventDefault(); e.returnValue = ''; }
+});
+async function saveStock() {
+  const items = [];
+  const bad = [];
+  for (const [code, v] of Object.entries(S.stock)) {
+    if (!filled(v)) continue;
+    const r = row(code); if (!r) continue;
+    const num = x => blank(x) ? 0 : +String(x).replace(/,/g, '').trim();
+    const p = r.pack ? num(v.p) : 0, u = num(v.u);
+    if (isNaN(p) || isNaN(u) || p < 0 || u < 0) { bad.push(r.name); continue; }
+    items.push({ code, qty: Math.round((p * (r.pack || 0) + u) * 100) / 100 });  // 반알(0.5) 그대로
+  }
+  if (bad.length) { toast('숫자가 아닌 칸이 있어요: ' + bad.slice(0, 3).join(', ')); return; }
+  if (!items.length) { toast('입력한 재고가 없어요.'); return; }
+  if (!confirm(`${items.length}개 약의 재고를 ${S.sdate === TODAY ? '오늘' : sdateLabel(S.sdate)} 진료 마감 기준으로 맞출까요?`)) return;
+  const j = await post('/api/drugs/stock_bulk', { items, date: S.sdate });
+  if (j.ok) { toast(`${j.count}개 약의 재고를 저장했어요.`); S.stock = {}; dropDraft(); setTimeout(() => location.reload(), 800); }
+}
+function pass(r) {
+  const t = (document.getElementById('find').value || '').trim();
+  if (t && !(r.full + r.maker + r.orderName).includes(t)) return false;
+  if (S.ws !== 'all' && String(r.pref || '') !== S.ws) return false;
+  if (S.f === 'hidden') return !r.active;
+  if (!r.active) return false;
+  return S.f === 'all' || (S.f === 'new' && r.isNew) || (S.f === 'pack' && !r.pack) || (S.f === 'target' && r.target == null)
+    || (S.f === 'psy' && r.psy) || (S.f === 'non' && !r.insured) || (S.f === 'buy' && !r.insured && r.buy == null);
+}
+function render() {
+  const act = D.rows.filter(r => r.active);
+  const defs = [['all', '전체', act.length], ['new', '신규 추가', act.filter(r => r.isNew).length], ['pack', '포장 미입력', act.filter(r => !r.pack).length],
+    ['target', '목표 미입력', act.filter(r => r.target == null).length], ['psy', '향정', act.filter(r => r.psy).length], ['non', '비급여', act.filter(r => !r.insured).length],
+    ['buy', '매입단가 미입력', act.filter(r => !r.insured && r.buy == null).length], ['hidden', '숨긴 약', D.rows.length - act.length]];
+  document.getElementById('filters').innerHTML = defs.map(([k, l, n]) => `<button class="chip ${S.f === k ? 'on' : ''}" onclick="S.f='${k}';render()">${l} ${n}</button>`).join('');
+  const wsDefs = [['all', '전체 도매상', act.length], ...D.ws.map(w => [String(w.id), w.name, act.filter(r => r.pref == w.id).length]), ['', '도매상 지정 안 함', act.filter(r => !r.pref).length]];
+  document.getElementById('wsFilter').innerHTML = '<span class="muted small" style="margin-right:2px">자주 담는 도매상</span>' + wsDefs.map(([k, l, n]) =>
+    `<button class="chip ${S.ws === k ? 'on' : ''}" data-k="${k}" onclick="S.ws=this.dataset.k;render()">${esc(l)} ${n}</button>`).join('');
+  document.getElementById('modeTabs').innerHTML = [['edit', '약 정보 편집'], ['stock', '재고 일괄 입력 (통/정)']].map(([k, l]) =>
+    `<button class="${S.mode === k ? 'on' : ''}" onclick="S.mode='${k}';render()">${l}</button>`).join('');
+  const stockMode = S.mode === 'stock';
+  document.getElementById('stockBar').style.display = stockMode && !MOBILE ? 'flex' : 'none';
+  document.getElementById('thead').innerHTML = stockMode ? '<tr><th>약품</th><th>포장</th><th class="r">지금 추정 재고</th><th>실제 재고: 통 + 낱알 (Enter = 다음 칸)</th></tr>' : HEAD_EDIT;
+  countStock(); showSdate();
+  const v = D.rows.filter(pass);
+  if (MOBILE) {
+    const byName = [...v].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    document.getElementById('mList').innerHTML = v.length ? byName.map(mRowHtml).join('') : '<p class="muted" style="padding:16px">해당하는 약이 없어요.</p>';
+    return;
+  }
+  S.vis = v;
+  renderBulk(stockMode);
+  const th = document.getElementById('selAllTh'); if (th) th.innerHTML = selAllBtn();
+  document.getElementById('rows').innerHTML = v.length ? v.map(stockMode ? stockRowHtml : rowHtml).join('') : '<tr><td colspan="10" class="muted" style="padding:20px 16px">해당하는 약이 없어요. 업로드 화면에서 eghis 통계를 올리면 사용 중인 약이 자동으로 들어와요.</td></tr>';
+}
+// 선택 → 도매상 일괄 변경
+function toggleSel(code) { if (S.sel[code]) delete S.sel[code]; else S.sel[code] = true; render(); }
+function selAllBtn() {
+  const v = S.vis || [], n = v.filter(r => S.sel[r.code]).length, all = v.length && n === v.length, some = n > 0 && !all;
+  const icon = some ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg>' : CHECK;
+  return `<button class="cb ${all || some ? 'on' : ''}" ${v.length ? '' : 'disabled'} aria-label="${all ? '보이는 약 선택 모두 해제' : '보이는 약 모두 선택'}" title="${all ? '모두 해제' : '보이는 약 모두 선택'}" onclick="toggleAllSel()">${icon}</button>`;
+}
+function toggleAllSel() {
+  const v = S.vis || [], all = v.length && v.every(r => S.sel[r.code]);
+  v.forEach(r => { if (all) delete S.sel[r.code]; else S.sel[r.code] = true; });
+  render();
+}
+function renderBulk(stockMode) {
+  const n = Object.keys(S.sel).length, bar = document.getElementById('bulkBar');
+  if (!n || stockMode || MOBILE) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = `<b>${n}개 선택</b><span class="muted">자주 담는 도매상을</span>
+    <select id="bulkWs" aria-label="바꿀 도매상">${D.ws.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('')}<option value="">지정 안 함</option></select>
+    <span class="muted">(으)로</span><button class="primary" onclick="applyBulkWs()">한 번에 바꾸기</button>
+    <span class="grow"></span><button onclick="S.sel={};render()">선택 해제</button>`;
+}
+async function applyBulkWs() {
+  const codes = Object.keys(S.sel), ws = document.getElementById('bulkWs').value;
+  const name = ws ? D.ws.find(w => w.id == ws).name : '지정 안 함';
+  if (!confirm(`${codes.length}개 약의 자주 담는 도매상을 '${name}'(으)로 바꿀까요?`)) return;
+  const j = await post('/api/drugs/bulk_ws', { codes, ws: ws ? +ws : null });
+  if (!j.ok) return;
+  codes.forEach(c => { const r = row(c); if (r) r.pref = ws ? +ws : null; });
+  S.sel = {}; toast(`${j.count}개 약을 '${name}'(으)로 바꿨어요.`); render();
+}
+async function delDrug(code) {
+  const r = row(code);
+  if (r.hist) { toast(`'${r.name}'은(는) 주문·입고 기록이 있어 지울 수 없어요. 안 쓰는 약이면 [숨기기]를 눌러주세요.`); return; }
+  let msg = `'${r.name}'을(를) 약 목록에서 삭제할까요?\n\n목표 재고·포장단위·입력한 재고도 같이 지워지고, 되돌릴 수 없어요.`;
+  if (r.daily > 0) msg += `\n\n처방 통계에 나오는 약이라 다음 통계를 올리면 다시 생길 수 있어요. 계속 안 쓸 약이면 [숨기기]가 나아요.`;
+  if (!confirm(msg)) return;
+  const j = await post('/api/drug/' + encodeURIComponent(code) + '/delete', {});
+  if (!j.ok) return;
+  D.rows = D.rows.filter(x => x.code !== code); delete S.sel[code];
+  toast(`'${r.name}'을(를) 삭제했어요.`); render();
+}
+async function save(code, body) {
+  const j = await post('/api/drug/' + encodeURIComponent(code), body);
+  if (!j.ok) return;
+  toast('저장했어요.');
+  if ('target' in body || 'pack' in body || 'active' in body) { setTimeout(() => location.reload(), 400); return; }
+  const r = row(code);
+  if ('order_name' in body) r.orderName = body.order_name;
+  if ('pref_ws' in body) r.pref = body.pref_ws ? +body.pref_ws : null;
+  if ('psy' in body) r.psy = body.psy ? 1 : 0;
+  if ('buy_price' in body) r.buy = body.buy_price === '' ? null : +body.buy_price;
+  const tr = document.getElementById('r_' + code); if (tr) tr.outerHTML = rowHtml(r);
+}
+async function applyAll() {
+  if (!confirm('목표가 비어 있는 약에 제안값을 넣을까요? (포장단위가 있고 사용 기록이 있는 약만)')) return;
+  const j = await post('/api/drugs/apply_suggest');
+  if (j.ok) { toast(`${j.count}개 약에 목표를 넣었어요.`); setTimeout(() => location.reload(), 700); }
+}
+async function bulkPack() {
+  const j = await post('/api/drugs/bulk_pack', { text: document.getElementById('bulkText').value });
+  if (!j.ok) return;
+  document.getElementById('bulkText').value = j.missing.join('\n');
+  document.getElementById('bulkRes').textContent = `${j.done.length}개 넣었어요.` + (j.missing.length ? ` 못 찾은 ${j.missing.length}줄은 칸에 남겨뒀어요 — 이름을 고쳐 다시 눌러주세요.` : '');
+  if (j.done.length && !j.missing.length) setTimeout(() => location.reload(), 1200);
+}
+// 새 약 추가
+function openAdd() { document.getElementById('add').style.display = 'block'; renderAddTabs(); document.getElementById('q').focus(); }
+function closeAdd() { document.getElementById('add').style.display = 'none'; }
+function renderAddTabs() {
+  document.getElementById('addTabs').innerHTML = [['search', '등록수가에서 찾기'], ['manual', '직접 입력']].map(([k, l]) => `<button class="${S.addTab === k ? 'on' : ''}" onclick="S.addTab='${k}';renderAddTabs()">${l}</button>`).join('');
+  document.getElementById('addSearch').style.display = S.addTab === 'search' ? 'flex' : 'none';
+  document.getElementById('addManual').style.display = S.addTab === 'manual' ? 'flex' : 'none';
+}
+let _st;
+function searchCat() {
+  clearTimeout(_st);
+  _st = setTimeout(async () => {
+    const q = document.getElementById('q').value.trim();
+    if (!q) { document.getElementById('catRes').innerHTML = ''; return; }
+    const r = await fetch('/api/catalog?q=' + encodeURIComponent(q)).then(x => x.json());
+    document.getElementById('catRes').innerHTML = r.rows.length ? r.rows.map(c => `<div class="row" style="padding:10px 0;border-top:1px solid var(--line2)">
+      <div class="grow" style="min-width:0"><div style="font-weight:500">${esc(c.name)}</div><div class="muted small">${esc(c.maker)} · ${c.insured ? '급여 · 약가 ' + fmt(c.price) + '원' : '비급여'}</div></div>
+      ${c.have ? '<span class="muted">이미 있음</span>' : `<button class="outline" onclick="addCat('${esc(c.code)}')">추가</button>`}</div>`).join('') : '<p class="muted">찾는 약이 없어요. 등록수가를 올렸는지 확인하거나 "직접 입력"을 써주세요.</p>';
+  }, 250);
+}
+async function addCat(code) {
+  const j = await post('/api/drugs/add', { catalog: code });
+  if (j.ok) { toast('추가했어요. 포장단위와 목표를 입력하세요.'); setTimeout(() => { location.hash = ''; location.reload(); }, 700); }
+}
+async function addManual() {
+  const g = id => document.getElementById(id).value;
+  const j = await post('/api/drugs/add', { name: g('m_name'), maker: g('m_maker'), orderName: g('m_order'), pack: g('m_pack'),
+    target: g('m_target'), insured: g('m_ins'), price: g('m_price'), pref: g('m_pref'), psy: document.getElementById('m_psy').checked });
+  if (j.ok) { toast('추가했어요.'); setTimeout(() => { location.hash = ''; location.reload(); }, 700); }
+}
+if (loadDraft() && !MOBILE) setTimeout(() => toast('저장하지 않은 재고 입력값을 다시 불러왔어요.'), 300);
+render();
+if (location.hash === '#add') openAdd();
+</script>
+{% endblock %}

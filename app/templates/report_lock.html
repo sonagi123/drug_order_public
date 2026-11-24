@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}리포트{% endblock %}
+{% block body %}
+<div style="display:flex;justify-content:center;padding:48px 0">
+  <form method="post" class="card" style="width:100%;max-width:380px;padding:32px 28px;display:flex;flex-direction:column;gap:16px">
+    <div style="width:56px;height:56px;border-radius:14px;background:var(--gl);color:var(--g);display:flex;align-items:center;justify-content:center;align-self:center">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+    </div>
+    <div style="text-align:center"><h1 style="font-size:22px">월간 리포트</h1>
+      <p class="sub">{% if has_pw %}원장 전용이에요. 비밀번호를 입력하세요.{% else %}처음이에요. 리포트에 쓸 비밀번호를 정해주세요.{% endif %}</p></div>
+    <label class="f">비밀번호<input type="password" name="pw" autocomplete="{{ 'current-password' if has_pw else 'new-password' }}" required autofocus style="font-size:18px;padding:12px 14px"></label>
+    {% if not has_pw %}<label class="f">한 번 더<input type="password" name="pw2" autocomplete="new-password" required style="font-size:18px;padding:12px 14px"></label>{% endif %}
+    <button class="primary big">{{ '열기' if has_pw else '비밀번호 정하고 열기' }}</button>
+    <p class="muted small" style="text-align:center;margin:0">30분 동안 쓰지 않으면 다시 잠겨요.</p>
+  </form>
+</div>
+{% endblock %}

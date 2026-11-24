@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}업로드{% endblock %}
+{% block body %}
+<div><h1>업로드</h1><p class="sub">eghis에서 내보낸 파일과 도매상 매출원장을 올리는 곳이에요.</p></div>
+{% if unmatched %}<div class="note">매출원장 제품명 중 약과 연결이 필요한 이름이 {{ unmatched }}개 있어요. <a href="{{ url_for('main.links') }}">연결하러 가기</a></div>{% endif %}
+<form class="card pad" method="post" action="{{ url_for('main.upload_auto') }}" enctype="multipart/form-data"
+      style="display:flex;flex-direction:column;gap:12px;border:2px solid var(--g)" id="autoForm">
+  <div class="row between"><h2>파일 올리기 (자동 인식)</h2><span class="muted small">매주 여기만 쓰면 돼요</span></div>
+  <label id="drop" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:28px;border:2px dashed #9AA6A2;border-radius:12px;background:#F8FAF9;cursor:pointer;text-align:center">
+    <b style="font-size:16px">eghis 엑셀이나 매출원장 파일을 여기에 끌어다 놓거나 눌러서 고르세요</b>
+    <span class="muted small">제약사별 발생 통계 · 사용자등록수가 · 도매상 매출원장(PDF·엑셀)을 알아서 구분해요. 여러 개를 한 번에 올려도 돼요.</span>
+    <span id="dropNames" class="small" style="color:var(--g);font-weight:700"></span>
+    <input type="file" name="file" multiple accept=".xls,.xlsx,.htm,.html,.pdf" style="display:none" onchange="picked(this)">
+  </label>
+  <div class="row muted small" style="gap:14px">
+    <span>통계 기간: 파일 이름의 날짜(예: …_20261112-20261118) → 없으면 <b>지난번 다음 날 ~ 어제</b>{% if nxt %} (지금은 {{ nxt[0] }} ~ {{ nxt[1] }}){% endif %}</span>
+    <label class="row" style="gap:6px">매출원장 도매상
+      <select name="ws"><option value="">자동 인식 (사업자번호)</option>{% for w in ws %}<option value="{{ w.id }}">{{ w.name }}{% if w.biz_no %} · {{ w.biz_no }}{% endif %}</option>{% endfor %}</select></label>
+    <label class="row" style="gap:6px"><input type="checkbox" name="replace"> 같은 통계 기간 다시 올리기</label>
+  </div>
+  <div><button class="primary big" id="autoBtn" disabled>올리기</button></div>
+</form>
+<section class="card pad" id="watch" style="display:flex;flex-direction:column;gap:12px">
+  <div class="row between"><h2>폴더 자동 읽기</h2>
+    <span class="small" style="font-weight:700;color:{{ 'var(--g)' if watch.watch_dir else 'var(--mut)' }}">{{ '켜짐' if watch.watch_dir else '꺼짐' }}</span></div>
+  <p class="muted small" style="margin:0;line-height:1.7">정해둔 폴더에 eghis 엑셀(제약사별 발생 통계 등)이나 매출원장을 <b>저장만 하면</b> 프로그램이 알아서 읽어요. 읽은 파일은 그 폴더 안 <b>읽음</b> 폴더로, 못 읽은 파일은 <b>실패</b> 폴더로 옮겨요.</p>
+  <form method="post" action="{{ url_for('main.settings_post', action='watch') }}" style="display:flex;flex-direction:column;gap:10px">
+    <label class="f">폴더 경로 (없으면 만들어요)
+      <span class="row" style="flex-wrap:nowrap"><input id="watchDir" name="watch_dir" value="{{ watch.watch_dir }}" placeholder="예: C:\약품관리\여기에_저장" class="grow">
+        <button type="button" onclick="pickFolder('watchDir')">폴더 고르기</button></span></label>
+    <div class="row">
+      <label class="row" style="gap:6px"><input type="radio" name="watch_mode" value="always" {{ 'checked' if watch.watch_mode != 'weekly' }}> 파일이 생기면 바로 (5분 안에)</label>
+      <label class="row" style="gap:6px"><input type="radio" name="watch_mode" value="weekly" {{ 'checked' if watch.watch_mode == 'weekly' }}> 정해진 때만: 매주
+        <select name="watch_day">{% for d in weekdays %}<option value="{{ loop.index0 }}" {{ 'selected' if watch.watch_day|int == loop.index0 }}>{{ d }}요일</option>{% endfor %}</select>
+        <input type="time" name="watch_time" value="{{ watch.watch_time }}" style="padding:6px 8px"> 이후</label>
+    </div>
+    <div class="row"><button class="primary">저장</button>
+      <button formaction="{{ url_for('main.settings_post', action='watch_now') }}">지금 폴더 확인</button>
+      {% if watch.watch_last %}<span class="muted small">마지막 확인 {{ watch.watch_last }}</span>{% endif %}</div>
+  </form>
+  <p class="muted small" style="margin:0">통계 기간은 파일 이름의 날짜(예: …_20261112-20261118)를 쓰고, 없으면 지난번 다음 날 ~ 어제로 잡아요. eghis에서 저장할 때 위치만 이 폴더로 정해두면 돼요.</p>
+</section>
+<p class="muted small" style="margin:0">아래 칸들은 따로 올리고 싶을 때 쓰는 예전 방식이에요.</p>
+<div class="grid3">
+  <form class="card pad" method="post" action="{{ url_for('main.upload_stats') }}" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:12px;border:2px solid var(--g)">
+    <div class="row between"><h2>eghis 제약사별 발생 통계</h2><span class="small" style="color:var(--g);font-weight:700">주 1회 ~ 월 1회</span></div>
+    {% if nxt %}<div class="flash ok">이번에 내보낼 기간<br><b style="font-size:18px">{{ nxt[0] }} ~ {{ nxt[1] }}</b></div>
+    {% elif not imports %}<div class="flash ok">처음이면 최근 한 달(예: 지난달 1일~말일)을 내보내 올려주세요.</div>{% endif %}
+    <input type="file" name="file" accept=".xls,.xlsx,.htm,.html" required onchange="guess(this)">
+    <div class="row" style="flex-wrap:nowrap">
+      <label class="f grow">시작<input type="date" name="start" id="st" value="{{ nxt[0] if nxt else '' }}"></label>
+      <label class="f grow">끝<input type="date" name="end" id="en" value="{{ nxt[1] if nxt else '' }}"></label>
+    </div>
+    <label class="row small"><input type="checkbox" name="replace"> 겹치는 기간 바꾸기 (같은 기간을 다시 올릴 때)</label>
+    <button class="primary">올리기</button>
+    <div class="muted" style="line-height:1.7">
+      {% for i in imports[:6] %}<div>✓ {{ i.start }} ~ {{ i.end }} · {{ i.n }}품목</div>{% else %}<div>아직 올린 기간이 없어요.</div>{% endfor %}
+    </div>
+  </form>
+  <form class="card pad" method="post" action="{{ url_for('main.upload_files') }}" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:12px">
+    <div class="row between"><h2>사용자등록수가 (약 목록)</h2><span class="muted small">필요할 때</span></div>
+    <p style="margin:0;line-height:1.7">현재 {{ catalog_n }}품목. 약가·급여구분·성분코드를 갱신하고, 새 약을 추가할 때 검색 목록으로 써요.</p>
+    <input type="file" name="file" accept=".xls,.xlsx,.htm,.html" required>
+    <button class="primary">올리기</button>
+  </form>
+  <form class="card pad" method="post" action="{{ url_for('main.upload_files') }}" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:12px">
+    <div class="row between"><h2>도매상 매출원장 PDF</h2><span class="muted small">매월</span></div>
+    <label class="f">어느 도매상 원장인가요?
+      <select name="ws">{% for w in ws %}<option value="{{ w.id }}">{{ w.name }}{% if w.ledger_format %} (양식 지원됨){% endif %}</option>{% endfor %}</select></label>
+    <input type="file" name="file" accept=".pdf" multiple required>
+    <button class="primary">올리기</button>
+    <p class="muted small" style="margin:0;line-height:1.6">여러 달 파일을 한 번에 골라도 돼요. 원장에서 포장단위·실제 매입가·향정 여부를 읽어요. 도매상마다 양식이 달라서, 읽지 못하는 양식이면 읽지 못했다고 알려드려요(원장이 없어도 입고 기준으로 금액이 계산돼요).</p>
+  </form>
+</div>
+<section class="card" style="overflow:hidden">
+  <div class="pad" style="border-bottom:1px solid var(--line)"><h2>최근 읽기 기록</h2></div>
+  <div class="scroll"><table style="min-width:720px">
+    <thead><tr><th>때</th><th>방법</th><th>파일</th><th>결과</th></tr></thead>
+    <tbody>
+    {% for l in logs %}<tr><td class="muted small" style="white-space:nowrap">{{ l.at[5:16] }}</td><td class="small">{{ l.source }}</td><td class="small">{{ l.filename }}</td>
+      <td class="small" style="color:{{ 'var(--g2)' if l.ok else 'var(--red)' }}">{{ l.message }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">아직 기록이 없어요.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+<section class="card" style="overflow:hidden">
+  <div class="pad" style="border-bottom:1px solid var(--line)"><h2>매출원장 업로드 기록</h2></div>
+  <div class="scroll"><table style="min-width:640px">
+    <thead><tr><th>도매상</th><th>기간</th><th class="r">품목 줄</th><th>약 연결</th><th>파일</th><th>올린 날</th></tr></thead>
+    <tbody>
+    {% for l in ledgers %}
+      <tr><td style="font-weight:500">{{ l.ws }}</td><td>{{ l.period_start }} ~ {{ l.period_end }}</td><td class="r">{{ l.n }}</td>
+        <td>{% if l.unl %}<a href="{{ url_for('main.links') }}">미연결 {{ l.unl }}줄</a>{% else %}모두 연결{% endif %}</td>
+        <td class="muted small">{{ l.filename }}</td><td class="muted small">{{ l.created_at[:10] }}</td></tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">아직 올린 매출원장이 없어요.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}
+{% block script %}
+<script>
+function picked(inp) {
+  const n = [...inp.files].map(f => f.name);
+  document.getElementById('dropNames').textContent = n.length ? n.join(', ') : '';
+  document.getElementById('autoBtn').disabled = !n.length;
+}
+const drop = document.getElementById('drop');
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.style.background = '#E6F0EC'; }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.style.background = '#F8FAF9'; }));
+drop.addEventListener('drop', e => { const inp = drop.querySelector('input'); inp.files = e.dataTransfer.files; picked(inp); });
+function guess(inp) {
+  const m = (inp.files[0] && inp.files[0].name || '').match(/(\d{8})\D+(\d{8})/);
+  if (!m) return;
+  const f = s => `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6)}`;
+  document.getElementById('st').value = f(m[1]); document.getElementById('en').value = f(m[2]);
+}
+</script>
+{% endblock %}

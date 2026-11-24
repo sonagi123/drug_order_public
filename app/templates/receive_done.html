@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}입고 완료{% endblock %}
+{% block body %}
+<h1>입고 체크</h1>
+<div class="tabs">
+  <a href="{{ url_for('main.receive') }}">입고 대기{% if data.waiting %} <span class="count gray">{{ data.waiting }}</span>{% endif %}</a>
+  <a href="{{ url_for('main.backorder') }}">미송분{% if data.backorders %} <span class="count">{{ data.backorders }}</span>{% endif %}</a>
+  <a class="on" href="{{ url_for('main.receive_done') }}">입고 완료</a>
+  <a href="{{ url_for('main.receive_export') }}">엑셀 내보내기</a>
+</div>
+<div class="row" style="gap:8px">
+  <select aria-label="달 고르기" onchange="location.href='?m='+this.value" style="min-height:44px">
+    {% for m in data.months %}<option value="{{ m }}" {% if m == data.month %}selected{% endif %}>{{ m[:4] }}년 {{ m[5:]|int }}월</option>{% endfor %}
+  </select>
+  <div class="row" id="wsf" style="gap:6px"></div>
+  <span class="grow"></span>
+  <input type="search" id="q" placeholder="약 이름 검색" oninput="S.q=this.value.trim();render()" style="min-width:200px">
+</div>
+<section class="card" style="overflow:hidden">
+  <div class="dn-row dn-th" id="heads"></div>
+  <div id="list"></div>
+</section>
+<p class="muted small">모든 품목을 확인한 주문의 약이 입고일 순으로 나와요. 제목(입고일·도매상·약 이름·주문·받음)을 누르면 정렬돼요. 미송이 남은 약은 주황색, 늦게 들어온 약은 들어온 날짜가 같이 나와요.</p>
+{% endblock %}
+{% block script %}
+<script>
+const D = {{ data|tojson }};
+const S = { ws: 'all', q: '', key: 'date', dir: -1 };
+const md = d => d ? `${+d.slice(5, 7)}/${+d.slice(8)}(${'일월화수목금토'[new Date(d + 'T00:00:00').getDay()]})` : '';
+const COLS = [['date', '입고일'], ['ws', '도매상'], ['name', '약 이름'], ['packs', '주문', 'r'], ['got', '받음', 'r'], [null, '미송', 'r'], [null, '확인', 'hide-m'], [null, '', '']];
+const GET = { date: i => (i.recv || i.order) + i.order, ws: i => i.ws, name: i => i.name, packs: i => i.packs, got: i => i.got };
+function sortCol(k) {
+  if (S.key === k) S.dir = -S.dir; else { S.key = k; S.dir = k === 'date' || k === 'got' || k === 'packs' ? -1 : 1; }
+  render();
+}
+function render() {
+  const names = [...new Set(D.items.map(i => i.ws))].sort((a, b) => a.localeCompare(b, 'ko'));
+  document.getElementById('wsf').innerHTML = names.length > 1 ? ['all', ...names].map(n =>
+    `<button class="chip ${S.ws === n ? 'on' : ''}" data-ws="${esc(n)}" onclick="S.ws=this.dataset.ws;render()">${n === 'all' ? '전체 도매상' : esc(n)}</button>`).join('') : '';
+  document.getElementById('heads').innerHTML = COLS.map(([k, label, cls]) => k
+    ? `<button class="th-sort ${cls || ''} ${S.key === k ? 'on' : ''}" onclick="sortCol('${k}')">${label}${S.key === k ? (S.dir > 0 ? ' ▲' : ' ▼') : ''}</button>`
+    : `<span class="${cls || ''}">${label}</span>`).join('');
+  const g = GET[S.key];
+  const v = D.items.filter(i => (S.ws === 'all' || i.ws === S.ws) && (!S.q || i.name.toLowerCase().includes(S.q.toLowerCase())))
+    .sort((a, b) => { const x = g(a), y = g(b); return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'ko')) * S.dir || a.name.localeCompare(b.name, 'ko'); });
+  let prev = null;
+  document.getElementById('list').innerHTML = v.length ? v.map(i => {
+    let note = '-';
+    if (i.left) note = `<span style="color:var(--amb);font-weight:700">${i.left}통 대기</span>`;
+    else if (i.cancelled) note = `<span class="muted">${i.cancelled}통 취소</span>`;
+    else if (i.late) note = `<span style="color:var(--g)">${md(i.late)} 옴</span>`;
+    const d = i.recv ? md(i.recv) : '<span class="muted">미입고</span>';
+    const same = S.key === 'date' && prev === (i.recv || i.order); prev = i.recv || i.order;
+    return `<div class="dn-row${i.left ? ' dn-left' : ''}${same ? '' : ' dn-first'}">
+      <span class="small" style="${same ? 'color:transparent' : ''}">${d}</span>
+      <span class="small">${esc(i.ws)}</span>
+      <span>${esc(i.name)}<span class="muted small" style="display:block">${md(i.order)} 주문</span></span>
+      <span class="r">${i.packs}통</span><span class="r"><b>${i.got}통</b></span>
+      <span class="r small">${note}</span><span class="small muted hide-m">${esc(i.staff)}</span>
+      <button class="del-btn" aria-label="입고 기록 삭제" title="입고 기록 삭제" onclick="delRow(${i.id})"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button></div>`;
+  }).join('') : '<div class="pad muted">이 달에 입고 완료된 약이 없어요.</div>';
+}
+async function delRow(id) {
+  const i = D.items.find(x => x.id === id);
+  if (!confirm(`${i.ws} · '${i.name}' 입고 기록(주문 ${i.packs}통, 받음 ${i.got}통)을 삭제할까요?\n\n받은 수량이 재고와 리포트 구매 금액에서 빠져요. 삭제하면 되돌릴 수 없어요.`)) return;
+  const j = await post(`/api/order_item/${id}/delete`, {});
+  if (!j.ok) return;
+  D.items = D.items.filter(x => x.id !== id); toast('입고 기록을 삭제했어요.'); render();
+}
+render();
+</script>
+{% endblock %}
