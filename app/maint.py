@@ -147,7 +147,20 @@ def _move_to_public(head):
     return True, "공개 배포판 저장소로 옮겼어요. 앞으로 업데이트는 여기서 받아요."
 
 
+_update_lock = threading.Lock()
+
+
 def update():
+    # 버튼이 두 번 눌려도 업데이트는 한 번만 (동시에 돌면 git 참조가 부딪힘)
+    if not _update_lock.acquire(blocking=False):
+        return False, "이미 업데이트 중이에요. 잠시 뒤 화면을 새로고침해 주세요."
+    try:
+        return _update()
+    finally:
+        _update_lock.release()
+
+
+def _update():
     code, head = _git("rev-parse", "HEAD")
     if code != 0:
         return False, "git을 찾지 못했어요. install.bat으로 설치했는지 확인해 주세요."
@@ -156,6 +169,9 @@ def update():
     if moved is not None:
         return moved
     code, out = _git("pull", "--ff-only")
+    if code != 0 and "cannot lock ref" in out:  # 다른 git 작업과 겹쳤으면 한 번 더
+        time.sleep(2)
+        code, out = _git("pull", "--ff-only")
     if code != 0:
         return False, "업데이트 실패: " + out[-400:]
     if "Already up to date" in out or "이미 업데이트" in out:

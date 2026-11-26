@@ -104,7 +104,7 @@
       <h2>프로그램 업데이트</h2>
       <p class="muted small" style="margin:0">현재 버전: {{ version }}<br>업데이트 전에 자동으로 백업하고, 끝나면 저절로 다시 시작해요.</p>
       <div class="row">
-        <form method="post" action="{{ url_for('main.settings_post', action='update') }}"><button class="primary">업데이트</button></form>
+        <form method="post" action="{{ url_for('main.settings_post', action='update') }}" onsubmit="const b=this.querySelector('button');if(b.disabled)return false;b.disabled=true;b.textContent='업데이트 중… (1분쯤 걸려요)';return true"><button class="primary">업데이트</button></form>
         <form method="post" action="{{ url_for('main.settings_post', action='rollback') }}" onsubmit="return confirm('바로 전 버전으로 되돌릴까요?')"><button>이전 버전으로 되돌리기</button></form>
       </div>
     </section>
