@@ -117,8 +117,10 @@ def start_scheduler():
 
 # ---------------------------------------------------------------- 업데이트 (git)
 def _git(*args):
-    r = subprocess.run(["git", "-C", db.BASE_DIR, *args], capture_output=True, text=True, timeout=180)
-    return r.returncode, (r.stdout + r.stderr).strip()
+    # git 출력은 UTF-8(한글 커밋 설명 등). 윈도우 기본 인코딩(cp949)으로 읽으면 깨져서 결과가 None이 됨
+    r = subprocess.run(["git", "-c", "core.quotepath=off", "-c", "i18n.logOutputEncoding=UTF-8", "-C", db.BASE_DIR, *args],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
+    return r.returncode, ((r.stdout or "") + (r.stderr or "")).strip()
 
 
 def version():
