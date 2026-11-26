@@ -8,7 +8,11 @@
 </div>
 <div class="row between" style="align-items:flex-end">
   <div>
+    {% if data.mode == 'manual' %}
     <p class="sub">진료가 끝나면 향정 약마다 <b>그날 쓴 양</b>을 적어요. 잔량 = 전날 잔량 + 입고 체크에서 들어온 양 − 오늘 사용량. 향정은 처방 통계로 재고를 빼지 않아요.</p>
+    {% else %}
+    <p class="sub">지금 향정 재고는 <b>처방 통계 엑셀</b>로 계산해요(설정 → 향정 재고 계산). 여기 적는 사용량은 <b>기록용</b>이고 재고에서 빼지 않아요. 엑셀 처방량과 다른 날은 주황색으로 보여요.</p>
+    {% endif %}
   </div>
   <div class="row" id="people" style="gap:6px"></div>
 </div>
@@ -32,6 +36,8 @@
     <button class="primary big" id="saveBtn" onclick="save()"></button>
   </div>
 </section>
+
+<div id="cmp"></div>
 
 <section style="display:flex;flex-direction:column;gap:8px">
   <div class="row between">
@@ -58,14 +64,17 @@ function nextDay() { const t = new Date(D.day + 'T00:00:00'); t.setDate(t.getDat
 function dirty() { return D.rows.some(r => (r.qty == null ? '' : String(r.qty)) !== String(S.v[r.code]).trim()); }
 function pickWho(n) { S.who = n; saveStaff(n); render(); }
 const num = x => String(x).trim() === '' ? null : +String(x).replace(/,/g, '');
+const XL = D.mode === 'excel';
 function left(r) {
   if (r.baseToday) return r.baseQty;
+  if (XL) return r.now;
   if (r.prev == null) return null;
   return r.prev + r.in - (num(S.v[r.code]) || 0);
 }
 function rowHtml(r) {
   const u = num(S.v[r.code]), l = left(r);
-  const odd = r.pack && l != null && (l < r.pack || (u != null && r.usual > 0 && u > r.usual * 2));
+  const diff = XL && !D.xlAvg && r.xl != null && u != null && Math.abs(u - r.xl) >= 0.5;
+  const odd = (r.pack && l != null && (l < r.pack || (!XL && u != null && r.usual > 0 && u > r.usual * 2))) || diff;
   const cls = r.baseToday ? '' : odd ? 'warn' : u != null ? 'done' : '';
   const inp = r.baseToday
     ? '<span class="muted small">이날 진료 끝난 뒤 재고로 입력돼 있어서 사용량은 안 적어도 돼요</span>'
@@ -73,7 +82,8 @@ function rowHtml(r) {
       ? '<span class="small" style="color:var(--amb)">기준 재고가 없어요 · 약품 관리에서 먼저 재고 입력</span>'
       : `<input class="psy-in" inputmode="decimal" enterkeyhint="next" data-code="${esc(r.code)}" value="${esc(S.v[r.code])}" aria-label="${esc(r.name)} 오늘 사용량"
           oninput="S.v['${r.code}']=this.value;upd('${r.code}')" onkeydown="nextIn(event,this)"><span class="muted">${esc(r.unit)}</span>
-         <span class="muted small">평소 ${r.usual}${esc(r.unit)}</span>`;
+         ${XL ? `<span class="small" style="color:${diff ? 'var(--amb)' : 'var(--mut)'}">엑셀 ${r.xl == null ? '통계 없음' : fmt(r.xl) + esc(r.unit) + (D.xlAvg ? ' (기간 평균)' : '')}</span>`
+              : `<span class="muted small">평소 ${r.usual}${esc(r.unit)}</span>`}`;
   return `<div class="psy-row ${cls}" id="p_${esc(r.code)}">
     <div style="min-width:0"><div style="font-size:16px;font-weight:500">${esc(r.name)}</div><div class="muted small">${r.pack ? `1통 = ${r.pack}${esc(r.unit)}` : '포장 미입력'}</div></div>
     <span class="r"><span class="m-lbl">전날 </span>${r.prev == null ? '—' : fmt(r.prev) + esc(r.unit)}</span>
@@ -105,6 +115,7 @@ function render() {
     <span><b>${bt}개 약</b>은 ${D.day === D.today ? '오늘' : md(D.day)} 약품 관리에서 재고를 입력해서, 그 숫자를 <b>그날 진료 끝난 뒤 재고</b>로 보고 있어요. 그래서 사용량 칸이 없어요.<br>
       아침(진료 전)에 센 숫자였다면 [아침에 센 재고로 바꾸기]를 눌러 주세요. 그 숫자가 <b>아침 재고</b>가 되고, 그날 사용량을 적을 수 있어요.</span>
     <button class="primary" onclick="toMorning()">아침에 센 재고로 바꾸기</button></div>` : '';
+  cmpRender();
   document.getElementById('people').innerHTML = peopleHtml(D.staff, S.who, 'pickWho', '기록하는 사람');
   document.getElementById('rows').innerHTML = D.rows.length ? D.rows.map(rowHtml).join('')
     : '<div class="pad muted">향정으로 표시된 약이 없어요. 약품 관리에서 향정 칸을 체크하세요.</div>';
@@ -112,6 +123,22 @@ function render() {
   document.getElementById('hist').innerHTML = `<table class="psy-hist"><thead><tr><th>약</th>${days.map((d, k) => `<th class="r">${d}</th>`).join('')}<th class="r">잔량</th></tr></thead><tbody>` +
     D.rows.map(r => `<tr><td>${esc(r.name)}</td>${r.week.map(v => `<td class="r ${v == null ? 'muted' : ''}">${v == null ? '-' : fmt(v)}</td>`).join('')}<td class="r"><b style="color:var(--g)">${r.now == null ? '—' : fmt(r.now)}</b></td></tr>`).join('') + '</tbody></table>';
   head();
+}
+let cmpAll = false;
+function cmpRender() {
+  const C = D.cmp, el = document.getElementById('cmp');
+  if (!C) { el.innerHTML = XL ? '<p class="muted small">향정 기록을 시작한 뒤의 처방 통계가 들어오면 여기서 기록과 엑셀 처방량을 비교해 보여줘요.</p>' : ''; return; }
+  const rows = C.rows.map(x => ({ ...x, d: x.rec - x.xl })).map(x => ({ ...x, bad: Math.abs(x.d) > 1 }));
+  const bad = rows.filter(x => x.bad), show = cmpAll ? rows : bad;
+  el.innerHTML = `<section class="card pad" style="display:flex;flex-direction:column;gap:8px">
+    <div class="row between"><h2 style="font-size:17px">기록 vs 엑셀 처방량 · ${md(C.from)}~${md(C.to)}</h2>
+      <span class="muted small">처방 통계 있는 ${C.days}일 중 기록한 날 ${C.logged}일 · 1정 넘게 다르면 주황색</span></div>
+    <b style="color:${bad.length ? 'var(--amb)' : 'var(--g)'}">${bad.length ? `다른 약 ${bad.length}개` : `${rows.length}개 약 모두 맞아요`}</b>
+    ${show.length ? `<div style="overflow-x:auto"><table class="psy-hist"><thead><tr><th>약</th><th class="r">기록</th><th class="r">엑셀</th><th class="r">차이</th></tr></thead><tbody>` +
+      show.map(x => `<tr><td>${esc(x.name)}</td><td class="r">${fmt(x.rec)}</td><td class="r">${fmt(x.xl)}</td>
+        <td class="r"><b style="color:${x.bad ? 'var(--amb)' : 'var(--g)'}">${x.bad ? (x.d > 0 ? '+' : '') + fmt(x.d) : '맞음'}</b></td></tr>`).join('') + '</tbody></table></div>' : ''}
+    <div class="row" style="gap:10px">${rows.length > bad.length ? `<button class="chip" onclick="cmpAll=!cmpAll;cmpRender()">${cmpAll ? '다른 약만 보기' : `맞는 약 ${rows.length - bad.length}개도 보기`}</button>` : ''}
+    ${C.logged < C.days ? '<span class="muted small">기록하지 않은 날이 있으면 기록 합계가 적게 나와요.</span>' : ''}</div></section>`;
 }
 async function toMorning() {
   const bt = D.rows.filter(r => r.baseToday).length;

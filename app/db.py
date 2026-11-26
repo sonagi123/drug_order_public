@@ -130,6 +130,7 @@ DEFAULTS = {
     "watch_day": "0",
     "watch_time": "09:00",
     "watch_last": "",
+    "psy_mode": "excel",  # 향정 재고: manual(향정 관리 기록) / excel(처방 통계)
 }
 
 
@@ -162,6 +163,10 @@ def init():
     for col, typ in (("billing_day", "INTEGER"), ("discount_rate", "REAL DEFAULT 0"), ("discount_on", "INTEGER DEFAULT 0"), ("biz_no", "TEXT")):
         if col not in wcols:
             conn.execute(f"ALTER TABLE wholesalers ADD COLUMN {col} {typ}")
+    # 향정 재고 방식이 아직 없으면: 이미 향정 관리에 기록해 온 병원은 수기, 아니면 엑셀
+    if not conn.execute("SELECT 1 FROM settings WHERE key='psy_mode'").fetchone():
+        had = conn.execute("SELECT 1 FROM psy_usage LIMIT 1").fetchone()
+        conn.execute("INSERT INTO settings(key, value) VALUES ('psy_mode', ?)", ("manual" if had else "excel",))
     for k, v in DEFAULTS.items():
         conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
     # 2026-11-21: 처방발생 통계가 등록수가로 잘못 읽혀 비워진 약 목록(catalog) 이름 복구

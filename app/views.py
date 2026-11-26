@@ -450,7 +450,9 @@ def psy():
     day = D0.isoformat()
     prev_day = (D0 - timedelta(days=1)).isoformat()
     week = [(D0 - timedelta(days=k)).isoformat() for k in range(6, -1, -1)]
-    avg = calc.usage_state()["avg"]
+    ST = calc.usage_state()
+    avg = ST["avg"]
+    manual = calc.psy_manual()
     rows = []
     for g in _psy_drugs():
         code = g["code"]
@@ -463,17 +465,26 @@ def psy():
         based_today = bool(g["base_date"] and g["base_date"] >= day)
         rows.append({
             "code": code, "name": importers.short_name(g["name"]), "pack": g["pack"] or 0, "unit": g["unit"] or "정",
-            "prev": calc.psy_balance(code, prev_day, g["base_qty"], g["base_date"]),
+            "prev": calc.psy_balance(code, prev_day, g["base_qty"], g["base_date"], st=ST),
             "in": rin, "qty": u["qty"] if u else None, "staff": u["staff"] if u else "",
             "usual": round(avg.get(code, 0)), "baseToday": based_today,
             "baseQty": g["base_qty"] if based_today else None,
             "week": [hist.get(w) for w in week],
-            "now": calc.psy_balance(code, day, g["base_qty"], g["base_date"]),
+            "now": calc.psy_balance(code, day, g["base_qty"], g["base_date"], st=ST),
+            "xl": None if manual else (round(calc.stats_used(ST, code, prev_day, day), 1) if D0 in ST["day_import"] else None),
         })
     rows.sort(key=lambda r: r["name"])
     staff = [r["name"] for r in db.q("SELECT name FROM staff ORDER BY id")]
     first = db.one("SELECT MIN(date) AS d FROM psy_usage")["d"]
+    cmp = None if manual else calc.psy_compare([r["code"] for r in rows])
+    if cmp:
+        cmp["rows"] = [{"name": r["name"], "unit": r["unit"], **cmp["rows"][r["code"]]} for r in rows]
+    xl_avg = False
+    if not manual and D0 in ST["day_import"]:
+        im = db.one("SELECT start, end FROM usage_imports WHERE id=?", (ST["day_import"][D0],))
+        xl_avg = bool(im and im["start"] != im["end"])
     return render_template("psy.html", data={"day": day, "today": db.today(), "rows": rows, "staff": staff,
+                                             "mode": "manual" if manual else "excel", "cmp": cmp, "xlAvg": xl_avg,
                                              "week": week, "first": first, "monthStart": db.today()[:8] + "01"})
 
 
@@ -485,6 +496,7 @@ def psy_review():
     if a > b:
         a, b = b, a
     drugs = {g["code"]: g for g in _psy_drugs()}
+    ST = calc.usage_state()
     names = {c: importers.short_name(g["name"]) for c, g in drugs.items()}
     alias = {r["code"]: r["alias_of"] for r in db.q("SELECT code, alias_of FROM drugs WHERE alias_of IS NOT NULL")}
     by_day = {}
@@ -504,9 +516,9 @@ def psy_review():
         for c, e in by_day[dd].items():
             g = drugs[c]
             rows.append({"code": c, "name": names[c], "unit": g["unit"] or "정", "pack": g["pack"] or 0,
-                         "prev": calc.psy_balance(c, prev_d, g["base_qty"], g["base_date"]),
+                         "prev": calc.psy_balance(c, prev_d, g["base_qty"], g["base_date"], st=ST),
                          "in": e.get("in") or 0, "use": e.get("use"), "staff": e.get("staff") or "",
-                         "left": calc.psy_balance(c, dd, g["base_qty"], g["base_date"]),
+                         "left": calc.psy_balance(c, dd, g["base_qty"], g["base_date"], st=ST),
                          "base": g["base_date"] == dd})
         rows.sort(key=lambda r: r["name"])
         staff = sorted({r["staff"] for r in rows if r["staff"]})
@@ -568,6 +580,7 @@ def psy_xlsx():
     if a > b:
         a, b = b, a
     drugs = sorted(_psy_drugs(), key=lambda g: importers.short_name(g["name"]))
+    ST = calc.usage_state()
     days = []
     cur = date.fromisoformat(a)
     while cur <= date.fromisoformat(b):
@@ -594,12 +607,12 @@ def psy_xlsx():
         for dd in days:
             u = use.get(dd)
             if u or rin.get(dd):
-                prev = calc.psy_balance(code, (date.fromisoformat(dd) - timedelta(days=1)).isoformat(), g["base_qty"], g["base_date"])
+                prev = calc.psy_balance(code, (date.fromisoformat(dd) - timedelta(days=1)).isoformat(), g["base_qty"], g["base_date"], st=ST)
                 ws1.append([dd, name, prev, rin.get(dd) or 0, u["qty"] if u else None,
-                            calc.psy_balance(code, dd, g["base_qty"], g["base_date"]), u["staff"] if u else ""])
+                            calc.psy_balance(code, dd, g["base_qty"], g["base_date"], st=ST), u["staff"] if u else ""])
             line.append(u["qty"] if u else None)
             tot += u["qty"] if u else 0
-        ws2.append(line + [tot, calc.psy_balance(code, b, g["base_qty"], g["base_date"])])
+        ws2.append(line + [tot, calc.psy_balance(code, b, g["base_qty"], g["base_date"], st=ST)])
     ws1.column_dimensions["B"].width = 26
     ws2.column_dimensions["A"].width = 26
     buf = io.BytesIO()
@@ -1361,6 +1374,19 @@ def settings_post(action):
             else:
                 db.set_setting("report_pw", generate_password_hash(f["new"]))
                 flash("리포트 비밀번호를 바꿨어요.", "ok")
+        elif action == "psy_mode":
+            cur = db.get_setting("report_pw")
+            new = "excel" if f.get("psy_mode") == "excel" else "manual"
+            if not cur:
+                flash("향정 재고 방식을 바꾸려면 먼저 아래에서 리포트 비밀번호(원장 비밀번호)를 정해 주세요.", "error")
+            elif not check_password_hash(cur, f.get("pw", "")):
+                flash("원장 비밀번호가 맞지 않아요. 향정 재고 방식은 그대로예요.", "error")
+            elif new == db.get_setting("psy_mode"):
+                flash("이미 그 방식이에요.", "ok")
+            else:
+                db.set_setting("psy_mode", new)
+                flash("향정 재고를 이제 " + ("향정 관리에 적은 사용량(수기)" if new == "manual" else "처방 통계 엑셀") + "으로 계산해요.", "ok")
+            return redirect(url_for("main.settings") + "#psymode")
         elif action == "backup_dir":
             db.set_setting("backup_dir", f.get("backup_dir", "").strip())
             flash("백업 폴더를 저장했어요.", "ok")

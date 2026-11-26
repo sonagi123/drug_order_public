@@ -56,6 +56,51 @@ def usage_state():
     return {"day_import": day_import, "rate": rate, "avg": avg, "last_end": last_end}
 
 
+def psy_manual():
+    """향정 재고 계산 방식: 'manual'(향정 관리에 적은 사용량) / 'excel'(처방 통계). 설정 → 향정 재고 계산."""
+    return db.get_setting("psy_mode") != "excel"
+
+
+def stats_used(st, code, after, upto):
+    """처방 통계로 본 사용량 합계 (after < 날짜 <= upto, 통계 없는 날은 0)."""
+    used = 0.0
+    cur = d(after) + timedelta(days=1)
+    end = d(upto)
+    while cur <= end:
+        iid = st["day_import"].get(cur)
+        if iid is not None:
+            used += st["rate"].get((iid, code), 0.0)
+        cur += timedelta(days=1)
+    return used
+
+
+def psy_compare(codes, days=35):
+    """향정: 처방 통계가 있는 최근 기간 동안 '향정 관리 기록 합계' vs '엑셀 처방량 합계'."""
+    st = usage_state()
+    if not st["last_end"]:
+        return None
+    lo = st["last_end"] - timedelta(days=days - 1)
+    first = db.one("SELECT MIN(date) AS d FROM psy_usage")["d"]
+    if not first:
+        return None
+    lo = max(lo, d(first))  # 향정 기록을 시작한 날부터만 비교
+    covered = sorted(x for x in st["day_import"] if x >= lo)
+    if not covered:
+        return None
+    cs = {x.isoformat() for x in covered}
+    rec = {}
+    for r in db.q("SELECT code, date, qty FROM psy_usage WHERE date BETWEEN ? AND ?", (covered[0].isoformat(), covered[-1].isoformat())):
+        if r["date"] in cs:
+            rec[r["code"]] = rec.get(r["code"], 0) + (r["qty"] or 0)
+    logged = {r["date"] for r in db.q("SELECT DISTINCT date FROM psy_usage WHERE date BETWEEN ? AND ?", (covered[0].isoformat(), covered[-1].isoformat()))}
+    out = {}
+    for c in codes:
+        xl = sum(st["rate"].get((st["day_import"][x], c), 0.0) for x in covered)
+        out[c] = {"rec": rec.get(c, 0), "xl": round(xl, 2)}
+    return {"from": covered[0].isoformat(), "to": covered[-1].isoformat(), "days": len(covered),
+            "logged": len(logged & cs), "rows": out}
+
+
 def latest_usage_end():
     r = db.one("SELECT MAX(end) AS e FROM usage_imports")
     return r["e"] if r and r["e"] else None
@@ -93,6 +138,7 @@ def drug_rows(include_inactive=False):
     for r in db.q("SELECT code, date, qty FROM psy_usage"):
         psy_use.setdefault(roots.get(r["code"], r["code"]), []).append((r["date"], r["qty"] or 0))
 
+    manual = psy_manual()
     out = []
     for g in drugs:
         code = g["code"]
@@ -102,7 +148,7 @@ def drug_rows(include_inactive=False):
         base_qty, base_date = g["base_qty"], g["base_date"]
         est = None
         estimated_days = 0
-        if base_qty is not None and base_date and g["psy"]:
+        if base_qty is not None and base_date and g["psy"] and manual:
             today_s = today.isoformat()
             used = sum(q for dt, q in psy_use.get(code, []) if base_date < dt <= today_s)
             got = sum(u for dt, u in rec.get(code, []) if dt > base_date)
@@ -172,8 +218,9 @@ def merge_duplicates():
     return merged
 
 
-def psy_balance(code, upto, base_qty=None, base_date=None):
-    """향정 약의 그날(upto) 진료 마감 후 잔량 = 기준 재고 + 입고 − 향정 관리 사용량. 기준이 그 뒤면 None."""
+def psy_balance(code, upto, base_qty=None, base_date=None, st=None):
+    """향정 약의 그날(upto) 진료 마감 후 잔량 = 기준 재고 + 입고 − 사용량. 기준이 그 뒤면 None.
+    사용량은 설정에 따라 향정 관리 기록(수기) 또는 처방 통계(엑셀)."""
     if base_qty is None:
         g = db.one("SELECT base_qty, base_date FROM drugs WHERE code=?", (code,))
         base_qty, base_date = (g["base_qty"], g["base_date"]) if g else (None, None)
@@ -183,6 +230,9 @@ def psy_balance(code, upto, base_qty=None, base_date=None):
     ph = ",".join("?" * len(codes))
     got = db.one(f"SELECT COALESCE(SUM(packs*pack),0) AS n FROM receipts WHERE code IN ({ph}) AND date>? AND date<=?",
                  (*codes, base_date, upto))["n"]
-    used = db.one("SELECT COALESCE(SUM(qty),0) AS n FROM psy_usage WHERE code=? AND date>? AND date<=?",
-                  (code, base_date, upto))["n"]
+    if psy_manual():
+        used = db.one("SELECT COALESCE(SUM(qty),0) AS n FROM psy_usage WHERE code=? AND date>? AND date<=?",
+                      (code, base_date, upto))["n"]
+    else:
+        used = stats_used(st or usage_state(), code, base_date, upto)
     return base_qty + got - used

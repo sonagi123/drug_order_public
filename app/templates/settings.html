@@ -73,6 +73,17 @@
         <input name="name" placeholder="이름" required class="grow"><button>추가</button></form>
     </section>
 
+    <form class="card pad" id="psymode" method="post" action="{{ url_for('main.settings_post', action='psy_mode') }}" style="display:flex;flex-direction:column;gap:10px"
+          onsubmit="return confirm('향정 재고 계산 방식을 바꿀까요?\n\n바꾼 뒤에는 향정 약의 기준 재고(약품 관리에서 입력한 날)부터 새 방식으로 다시 계산돼요.')">
+      <h2>향정 재고 계산 <span class="muted small" style="font-weight:400">원장 전용</span></h2>
+      <label class="row" style="gap:8px;align-items:flex-start;flex-wrap:nowrap;cursor:pointer"><input type="radio" name="psy_mode" value="manual" {{ 'checked' if s.psy_mode == 'manual' }} style="margin-top:4px;width:18px;height:18px;flex:none">
+        <span><b>수기 기록으로</b><br><span class="muted small">향정 관리에 매일 적은 사용량을 빼요. 처방 통계는 평균·추천에만 써요.</span></span></label>
+      <label class="row" style="gap:8px;align-items:flex-start;flex-wrap:nowrap;cursor:pointer"><input type="radio" name="psy_mode" value="excel" {{ 'checked' if s.psy_mode == 'excel' }} style="margin-top:4px;width:18px;height:18px;flex:none">
+        <span><b>처방 통계 엑셀로</b><br><span class="muted small">일반 약처럼 처방 통계로 빼요. 향정 관리 기록은 비교용으로 남아요.</span></span></label>
+      <input type="password" name="pw" placeholder="{{ '원장 비밀번호' if s.report_pw else '먼저 아래에서 리포트 비밀번호를 정해 주세요' }}" autocomplete="current-password" {{ '' if s.report_pw else 'disabled' }}>
+      <div><button class="outline" {{ '' if s.report_pw else 'disabled' }}>바꾸기</button></div>
+    </form>
+
     <form class="card pad" id="pw" method="post" action="{{ url_for('main.settings_post', action='pw') }}" style="display:flex;flex-direction:column;gap:10px">
       <h2>리포트 비밀번호 (원장 전용)</h2>
       <p class="muted small" style="margin:0">{{ '바꾸려면 현재 비밀번호가 필요해요.' if s.report_pw else '아직 정하지 않았어요. 리포트를 처음 열 때 정해도 돼요.' }}</p>
