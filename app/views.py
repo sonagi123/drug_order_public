@@ -91,7 +91,9 @@ def tour_steps():
         {"k": "stock", "t": "지금 재고 입력", "d": "통 + 낱알로 적고, 기준일은 센 날(아침에 셌으면 전날).", "href": url_for("main.drugs") + "#stock",
          "done": n > 0 and (act["b"] or 0) > 0},
         {"k": "qr", "t": "폰·태블릿 접속", "d": "설정 → 접속 주소의 QR을 찍고 홈 화면에 추가해요.", "href": st,
-         "done": g("tour_qr") == "1", "manual": True},
+         "done": g("tour_qr") == "1", "manual": "qr", "btn": "접속해 봤어요"},
+        {"k": "pc", "t": "직원 PC에서 접속", "d": "직원 PC는 설치할 것 없이 크롬·엣지 주소창에 아래 주소를 넣으면 돼요. 같은 병원 인터넷(와이파이·랜)이어야 해요. 열리면 즐겨찾기(Ctrl+D)나 바탕화면 바로가기로 저장해 두세요.",
+         "href": st, "done": g("tour_pc") == "1", "manual": "pc", "btn": "직원 PC에서 열어 봤어요", "addr": True},
     ]
 
 
@@ -101,6 +103,10 @@ def ctx():
     tour = None
     if state != "done" or request.endpoint == "main.help_page":
         steps = tour_steps()
+        ad = addresses()
+        for x in steps:
+            if x.get("addr"):
+                x["addr"] = ad[1] if len(ad) > 1 else ad[0]
         tour = {"state": state, "steps": steps, "done": sum(1 for x in steps if x["done"]), "total": len(steps)}
     return {"clinic": db.get_setting("clinic_name"), "nav": request.endpoint, "usage_note": usage_note,
             "setup_todo": setup_todo(), "tour": tour}
@@ -111,8 +117,9 @@ def api_tour():
     j = request.get_json(force=True) or {}
     if j.get("state") in ("open", "min", "done"):
         db.set_setting("tour", j["state"])
-    if "qr" in j:
-        db.set_setting("tour_qr", "1" if j["qr"] else "")
+    for k in ("qr", "pc"):
+        if k in j:
+            db.set_setting("tour_" + k, "1" if j[k] else "")
     return jsonify(ok=True)
 
 

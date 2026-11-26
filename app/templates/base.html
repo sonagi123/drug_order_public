@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{% endblock %} · {{ clinic or "" }} 약품관리</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=21">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=22">
 <script src="{{ url_for('static', filename='common.js') }}?v=5"></script>
 </head>
 <body>
@@ -44,7 +44,8 @@
   let open = T.state === 'open' && !(window.innerWidth < 640 && !sessionStorage.getItem('tourOpen'));
   const here = s => { try { const u = new URL(s.href, location.href); return u.pathname === location.pathname; } catch (e) { return false; } };
   async function set(state) { await post('/api/tour', { state }); }
-  window.tourQr = async v => { await post('/api/tour', { qr: v }); location.reload(); };
+  window.tourMark = async k => { await post('/api/tour', { [k]: true }); location.reload(); };
+  window.tourCopy = a => copyText(a).then(ok => toast(ok ? '주소를 복사했어요. 직원 PC 주소창에 붙여 넣으세요.' : a));
   window.tourOpen = async () => { open = true; sessionStorage.setItem('tourOpen', '1'); await set('open'); draw(); };
   window.tourMin = async () => { open = false; sessionStorage.removeItem('tourOpen'); await set('min'); draw(); };
   window.tourEnd = async () => {
@@ -59,14 +60,16 @@
       return;
     }
     el.className = 'tour';
-    el.innerHTML = `<div class="tour-hd"><div><b>시작 도우미</b><div class="muted small">${allDone ? '처음 설정을 다 마쳤어요. 이제 주문 화면에서 시작하세요.' : '위에서부터 차례로 하면 돼요. 끝난 칸은 저절로 체크돼요.'}</div></div>
+    el.innerHTML = `<div class="tour-hd"><div><b>시작 도우미</b><div class="muted small">${allDone ? '처음 설정을 다 마쳤어요. 직원들은 이제 각자 PC·폰에서 같은 주소로 들어오면 돼요.' : '위에서부터 차례로 하면 돼요. 끝난 칸은 저절로 체크돼요.'}</div></div>
         <button class="tour-x" onclick="tourMin()" aria-label="접기">–</button></div>
       <div class="tour-bar"><span style="width:${pct}%"></span></div>
-      <ol class="tour-list">${T.steps.map((s, i) => `<li class="${s.done ? 'ok' : ''} ${next && s.k === next.k ? 'cur' : ''}">
+      <ol class="tour-list">${T.steps.map((s, i) => `<li class="${s.done ? 'tdone' : ''} ${next && s.k === next.k ? 'cur' : ''}">
         <span class="tour-n">${s.done ? CHECK : i + 1}</span>
         <div class="tour-b"><a href="${esc(s.href)}" onclick="sessionStorage.setItem('tourOpen','1')">${esc(s.t)}</a>${here(s) && !s.done ? ' <span class="tag">이 화면</span>' : ''}
           ${next && s.k === next.k ? `<div class="small muted">${esc(s.d)}</div>` : ''}
-          ${s.manual && !s.done && next && s.k === next.k ? `<button class="chip" style="margin-top:6px" onclick="tourQr(true)">접속해 봤어요</button>` : ''}</div></li>`).join('')}</ol>
+          ${s.addr && !s.done && next && s.k === next.k ? `<div class="tour-addr"><code>${esc(s.addr)}</code><button class="chip" onclick="tourCopy('${esc(s.addr)}')">복사</button></div>
+            <div class="small muted" style="margin-top:4px">안 열리면 이 PC(서버)가 켜져 있는지 보고, 서버 PC에서 firewall.bat을 관리자 권한으로 다시 실행하세요.</div>` : ''}
+          ${s.manual && !s.done && next && s.k === next.k ? `<button class="chip" style="margin-top:6px" onclick="tourMark('${s.manual}')">${esc(s.btn)}</button>` : ''}</div></li>`).join('')}</ol>
       <div class="tour-ft"><a href="{{ url_for('main.help_page') }}#start" class="small">자세한 안내</a>
         <button class="${allDone ? 'primary' : 'chip'}" onclick="tourEnd()">${allDone ? '끝내기' : '그만 보기'}</button></div>`;
   }
