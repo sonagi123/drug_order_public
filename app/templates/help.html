@@ -39,8 +39,10 @@
 <div class="doc">
 
 <section id="start" class="card pad">
-  <h2>1. 처음 설정 (한 번만)</h2>
-  <p class="muted">설치 직후에는 화면 위에 <b>"처음 설정이 남았어요"</b> 줄이 떠요. 아래 순서대로 채우면 사라져요.</p>
+  <div class="row between"><h2>1. 처음 설정 (한 번만)</h2>
+    <button class="primary" onclick="post('/api/tour',{state:'open'}).then(()=>{sessionStorage.setItem('tourOpen','1');location.reload()})">시작 도우미 열기</button></div>
+  <p class="muted">처음 설치하면 화면 오른쪽 아래에 <b>시작 도우미</b>가 떠서 할 일을 순서대로 보여줘요. 끝난 칸은 저절로 체크되고, 글자를 누르면 그 화면으로 가요.</p>
+  
   <ol>
     <li><b>설정 → 기본값 → 병원 이름</b>: 화면 제목과 카톡 인사말(<code>{병원이름}</code> 자리)에 들어가요.</li>
     <li><b>설정 → 입고 체크하는 직원</b>: 입고 확인·향정 기록을 할 직원 이름을 넣어요.</li>

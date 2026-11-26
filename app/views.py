@@ -60,10 +60,60 @@ def setup_todo():
     return todo
 
 
+def tour_steps():
+    """시작 도우미 단계. done은 실제 데이터로 판단(도움말 '처음 설정'과 같은 순서)."""
+    g = db.get_setting
+    act = db.one("SELECT COUNT(*) AS n, SUM(CASE WHEN COALESCE(pack,0)>0 THEN 1 ELSE 0 END) AS p,"
+                 " SUM(CASE WHEN target IS NOT NULL THEN 1 ELSE 0 END) AS t, SUM(CASE WHEN base_qty IS NOT NULL THEN 1 ELSE 0 END) AS b"
+                 " FROM drugs WHERE active=1 AND alias_of IS NULL")
+    n = act["n"] or 0
+    most = lambda k: n > 0 and (act[k] or 0) >= n * 0.8
+    st = url_for("main.settings")
+    return [
+        {"k": "name", "t": "병원 이름", "d": "화면 제목과 카톡 인사말에 들어가요.", "href": st + "#general",
+         "done": bool((g("clinic_name") or "").strip())},
+        {"k": "ws", "t": "도매상 추가", "d": "거래하는 도매상과 결제 마감일·할인율을 넣어요.", "href": st + "#ws_add",
+         "done": bool(db.one("SELECT 1 FROM wholesalers WHERE active=1"))},
+        {"k": "staff", "t": "직원 이름", "d": "입고 확인·향정 기록을 할 사람을 넣어요.", "href": st + "#staff",
+         "done": bool(db.one("SELECT 1 FROM staff WHERE active=1"))},
+        {"k": "pw", "t": "원장 비밀번호", "d": "리포트와 향정 재고 방식 변경에 써요.", "href": st + "#pw",
+         "done": bool(g("report_pw"))},
+        {"k": "backup", "t": "백업 폴더 (권장)", "d": "구글 드라이브 안의 폴더를 고르면 매일 자동 백업돼요.", "href": st + "#backup_now",
+         "done": bool((g("backup_dir") or "").strip()), "opt": True},
+        {"k": "watch", "t": "자동 읽기 폴더", "d": "eghis 엑셀을 저장할 폴더. 저장만 하면 5분 안에 읽어요.", "href": url_for("main.upload") + "#watch",
+         "done": bool((g("watch_dir") or "").strip())},
+        {"k": "stats", "t": "eghis 처방 통계 넣기", "d": "[통계] → [진료] 처방발생 통계 → 엑셀(F10). 최근 1~3개월, 파일 이름 끝에 기간(_20261101-20261128).",
+         "href": url_for("main.upload"), "done": bool(db.one("SELECT 1 FROM usage_imports"))},
+        {"k": "pack", "t": "포장단위 채우기", "d": "[포장 미입력] 약마다 1통이 몇 정인지 넣어요.", "href": url_for("main.drugs") + "#f=pack",
+         "done": most("p")},
+        {"k": "target", "t": "목표 재고", "d": "[빈 목표에 제안값 일괄 적용] → 3주치 목표가 들어가요.", "href": url_for("main.drugs") + "#f=target",
+         "done": most("t")},
+        {"k": "stock", "t": "지금 재고 입력", "d": "통 + 낱알로 적고, 기준일은 센 날(아침에 셌으면 전날).", "href": url_for("main.drugs") + "#stock",
+         "done": n > 0 and (act["b"] or 0) > 0},
+        {"k": "qr", "t": "폰·태블릿 접속", "d": "설정 → 접속 주소의 QR을 찍고 홈 화면에 추가해요.", "href": st,
+         "done": g("tour_qr") == "1", "manual": True},
+    ]
+
+
 @bp.app_context_processor
 def ctx():
+    state = db.get_setting("tour") or "done"
+    tour = None
+    if state != "done" or request.endpoint == "main.help_page":
+        steps = tour_steps()
+        tour = {"state": state, "steps": steps, "done": sum(1 for x in steps if x["done"]), "total": len(steps)}
     return {"clinic": db.get_setting("clinic_name"), "nav": request.endpoint, "usage_note": usage_note,
-            "setup_todo": setup_todo()}
+            "setup_todo": setup_todo(), "tour": tour}
+
+
+@bp.post("/api/tour")
+def api_tour():
+    j = request.get_json(force=True) or {}
+    if j.get("state") in ("open", "min", "done"):
+        db.set_setting("tour", j["state"])
+    if "qr" in j:
+        db.set_setting("tour_qr", "1" if j["qr"] else "")
+    return jsonify(ok=True)
 
 
 @bp.route("/help")

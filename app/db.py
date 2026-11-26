@@ -167,6 +167,10 @@ def init():
     if not conn.execute("SELECT 1 FROM settings WHERE key='psy_mode'").fetchone():
         had = conn.execute("SELECT 1 FROM psy_usage LIMIT 1").fetchone()
         conn.execute("INSERT INTO settings(key, value) VALUES ('psy_mode', ?)", ("manual" if had else "excel",))
+    # 시작 도우미: 새로 설치한 병원만 처음에 자동으로 열림 (이미 쓰던 병원은 도움말에서 열 수 있음)
+    if not conn.execute("SELECT 1 FROM settings WHERE key='tour'").fetchone():
+        used = conn.execute("SELECT 1 FROM drugs LIMIT 1").fetchone()
+        conn.execute("INSERT INTO settings(key, value) VALUES ('tour', ?)", ("done" if used else "open",))
     for k, v in DEFAULTS.items():
         conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
     # 2026-11-21: 처방발생 통계가 등록수가로 잘못 읽혀 비워진 약 목록(catalog) 이름 복구
