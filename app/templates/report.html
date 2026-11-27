@@ -132,6 +132,22 @@ drawDrugs();
 </section>
 <section class="card" style="overflow:hidden">
   <div class="pad" style="border-bottom:1px solid var(--line)"><h2>도매상별</h2></div>
+  {% if r.wsTable %}
+  {% set ns = namespace(top=1) %}{% for t in r.wsTable %}{% set ns.top = [ns.top, t.est, (t.ledger.net if t.ledger else 0)]|max %}{% endfor %}{% set top = ns.top %}
+  <div class="pad" style="display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--line)">
+    <p class="sub small" style="margin:0">진한 막대 = 입고 체크 기준 구매액, 연한 막대 = 매출원장 실제</p>
+    {% for t in r.wsTable %}{% set led = t.ledger.net if t.ledger else 0 %}
+    <div style="display:grid;grid-template-columns:120px minmax(0,1fr) 90px;gap:10px;align-items:center;font-size:13px" title="{{ t.ws }} 입고 {{ t.est|won }} / 원장 {{ led|won }}">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">{{ t.ws }}</span>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <div class="bar"><i style="width:{{ (t.est / top * 100)|round(1) }}%"></i></div>
+        {% if t.ledger %}<div class="bar"><i style="width:{{ (led / top * 100)|round(1) }}%;background:#9CC3B6"></i></div>{% endif %}
+      </div>
+      <span class="r">{{ ((t.est if t.est > led else led) / 10000)|round|int }}만</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
   <div class="scroll"><table style="min-width:640px">
     <thead><tr><th>도매상</th><th class="r">주문 횟수</th><th class="r">주문액</th><th class="r">구매액 (입고)</th><th class="r">매출원장 실제</th><th class="r">할인</th></tr></thead>
     <tbody>
