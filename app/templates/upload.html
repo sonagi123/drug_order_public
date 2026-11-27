@@ -8,7 +8,7 @@
   <div class="row between"><h2>파일 올리기 (자동 인식)</h2><span class="muted small">매주 여기만 쓰면 돼요</span></div>
   <label id="drop" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:28px;border:2px dashed #9AA6A2;border-radius:12px;background:#F8FAF9;cursor:pointer;text-align:center">
     <b style="font-size:16px">eghis 엑셀이나 매출원장 파일을 여기에 끌어다 놓거나 눌러서 고르세요</b>
-    <span class="muted small">제약사별 발생 통계 · 사용자등록수가 · 도매상 매출원장(PDF·엑셀)을 알아서 구분해요. 여러 개를 한 번에 올려도 돼요.</span>
+    <span class="muted small">처방 통계(처방발생·제약사별) · 사용자등록수가 · 도매상 매출원장(PDF·엑셀)을 알아서 구분해요. 여러 개를 한 번에 올려도 돼요.</span>
     <span id="dropNames" class="small" style="color:var(--g);font-weight:700"></span>
     <input type="file" name="file" multiple accept=".xls,.xlsx,.htm,.html,.pdf" style="display:none" onchange="picked(this)">
   </label>
@@ -23,7 +23,7 @@
 <section class="card pad" id="watch" style="display:flex;flex-direction:column;gap:12px">
   <div class="row between"><h2>폴더 자동 읽기</h2>
     <span class="small" style="font-weight:700;color:{{ 'var(--g)' if watch.watch_dir else 'var(--mut)' }}">{{ '켜짐' if watch.watch_dir else '꺼짐' }}</span></div>
-  <p class="muted small" style="margin:0;line-height:1.7">정해둔 폴더에 eghis 엑셀(제약사별 발생 통계 등)이나 매출원장을 <b>저장만 하면</b> 프로그램이 알아서 읽어요. 읽은 파일은 그 폴더 안 <b>읽음</b> 폴더로, 못 읽은 파일은 <b>실패</b> 폴더로 옮겨요.</p>
+  <p class="muted small" style="margin:0;line-height:1.7">정해둔 폴더에 eghis 엑셀(처방발생 통계 등)이나 매출원장을 <b>저장만 하면</b> 프로그램이 알아서 읽어요. 읽은 파일은 그 폴더 안 <b>읽음</b> 폴더로, 못 읽은 파일은 <b>실패</b> 폴더로 옮겨요.</p>
   <form method="post" action="{{ url_for('main.settings_post', action='watch') }}" style="display:flex;flex-direction:column;gap:10px">
     <label class="f">폴더 경로 (없으면 만들어요)
       <span class="row" style="flex-wrap:nowrap"><input id="watchDir" name="watch_dir" value="{{ watch.watch_dir }}" placeholder="예: C:\약품관리\여기에_저장" class="grow">
@@ -43,7 +43,7 @@
 <p class="muted small" style="margin:0">아래 칸들은 따로 올리고 싶을 때 쓰는 예전 방식이에요.</p>
 <div class="grid3">
   <form class="card pad" method="post" action="{{ url_for('main.upload_stats') }}" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:12px;border:2px solid var(--g)">
-    <div class="row between"><h2>eghis 제약사별 발생 통계</h2><span class="small" style="color:var(--g);font-weight:700">주 1회 ~ 월 1회</span></div>
+    <div class="row between"><h2>eghis 처방 통계</h2><span class="small" style="color:var(--g);font-weight:700">주 1회</span></div>
     {% if nxt %}<div class="flash ok">이번에 내보낼 기간<br><b style="font-size:18px">{{ nxt[0] }} ~ {{ nxt[1] }}</b></div>
     {% elif not imports %}<div class="flash ok">처음이면 최근 한 달(예: 지난달 1일~말일)을 내보내 올려주세요.</div>{% endif %}
     <input type="file" name="file" accept=".xls,.xlsx,.htm,.html" required onchange="guess(this)">

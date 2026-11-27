@@ -75,9 +75,12 @@
   }
   draw();
   // 도우미 링크로 온 칸은 잠깐 강조
-  const id = location.hash.slice(1);
-  const box = id && /^[a-z_]+$/.test(id) && document.getElementById(id);
-  if (box) { box.scrollIntoView({ block: 'center' }); box.classList.add('tour-hl'); setTimeout(() => box.classList.remove('tour-hl'), 2600); }
+  const hl = () => {
+    const id = location.hash.slice(1);
+    const box = id && /^[a-z_]+$/.test(id) && document.getElementById(id);
+    if (box) { box.scrollIntoView({ block: 'center' }); box.classList.add('tour-hl'); setTimeout(() => box.classList.remove('tour-hl'), 2600); }
+  };
+  hl(); window.addEventListener('hashchange', hl);
 })();
 </script>
 {% endif %}

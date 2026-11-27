@@ -375,8 +375,12 @@ async function addManual() {
 }
 if (loadDraft() && !MOBILE) setTimeout(() => toast('저장하지 않은 재고 입력값을 다시 불러왔어요.'), 300);
 // 시작 도우미에서 넘어올 때: #f=pack (필터), #stock (재고 일괄 입력)
-if (location.hash.startsWith('#f=')) { S.f = location.hash.slice(3); S.mode = 'edit'; }
-if (location.hash === '#stock') S.mode = 'stock';
+function fromHash() {
+  if (location.hash.startsWith('#f=')) { S.f = location.hash.slice(3); S.mode = 'edit'; }
+  if (location.hash === '#stock') S.mode = 'stock';
+}
+fromHash();
+window.addEventListener('hashchange', () => { fromHash(); render(); scrollTo(0, 0); });
 render();
 if (location.hash === '#add') openAdd();
 </script>
