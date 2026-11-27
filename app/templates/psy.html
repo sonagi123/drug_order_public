@@ -29,7 +29,7 @@
 
 <div id="morning"></div>
 <section class="card" style="overflow:hidden">
-  <div class="psy-row psy-th"><span>약</span><span class="r">전날 잔량</span><span class="r">오늘 입고</span><span>오늘 사용량</span><span class="r">오늘 잔량</span></div>
+  <div class="psy-row psy-th"><span>약</span><span class="r">전날 잔량</span><span class="r">오늘 입고</span><span>오늘 사용량</span><span class="r" title="전체 잔량에서 꽉 찬 통을 빼고 남은 양">카세트 (추정)</span><span class="r">오늘 잔량</span></div>
   <div id="rows"></div>
   <div class="row between savebar" style="padding:14px 18px;border-top:1px solid var(--line);background:#F8FAF9">
     <span class="muted small hide-m">잔량이 1통 아래거나 사용량이 평소의 2배가 넘으면 주황색. 실제 개수와 어긋나면 약품 관리에서 재고를 다시 입력하세요.</span>
@@ -59,6 +59,7 @@ const D = {{ data|tojson }};
 const S = { who: savedStaff(), v: {} };
 D.rows.forEach(r => { S.v[r.code] = r.qty == null ? '' : String(r.qty); });
 const md = d => `${+d.slice(5, 7)}/${+d.slice(8)}`;
+const mdw = d => `${md(d)}(${'일월화수목금토'[new Date(d + 'T00:00:00').getDay()]})`;
 function go(d) { if (dirty() && !confirm('저장하지 않은 입력이 있어요. 그래도 날짜를 바꿀까요?')) return; location.href = '?d=' + d; }
 function nextDay() { const t = new Date(D.day + 'T00:00:00'); t.setDate(t.getDate() + 1); go(t.toISOString().slice(0, 10)); return false; }
 function dirty() { return D.rows.some(r => (r.qty == null ? '' : String(r.qty)) !== String(S.v[r.code]).trim()); }
@@ -89,14 +90,27 @@ function rowHtml(r) {
     <span class="r"><span class="m-lbl">전날 </span>${r.prev == null ? '—' : fmt(r.prev) + esc(r.unit)}</span>
     <span class="r" style="color:${r.in ? 'var(--g)' : 'var(--mut)'}"><span class="m-lbl">입고 </span>${r.in ? '+' + fmt(r.in) : '-'}</span>
     <div class="row" style="gap:6px;flex-wrap:nowrap">${inp}</div>
+    <span class="r psy-cas">${casHtml(r, l)}</span>
     <span class="r psy-left"><span class="m-lbl">잔량 </span><b style="font-size:16px;color:${odd ? 'var(--amb)' : 'var(--ink)'}">${l == null ? '—' : fmt(l) + esc(r.unit)}</b>${l != null && r.pack ? `<div class="muted small">≈ ${fmt(l / r.pack, 1)}통</div>` : ''}</span>
   </div>`;
+}
+// 카세트(조제기 안) 추정: 전체 잔량에서 꽉 찬 통 수만큼 빼고 남은 양. 예) 1,004.5정, 1통 100정 → 4.5정
+function cas(r, l) {
+  if (l == null || !r.pack || l < 0) return null;
+  const full = Math.floor((l + 1e-9) / r.pack);
+  return Math.round((l - full * r.pack) * 100) / 100;
+}
+function casHtml(r, l) {
+  const c = cas(r, l);
+  if (c == null) return '<span class="muted">—</span>';
+  return `<span class="m-lbl">카세트 </span><b style="font-size:16px;color:var(--g2)">${fmt(c)}${esc(r.unit)}</b><div class="muted small">꽉 찬 ${Math.floor((l + 1e-9) / r.pack)}통 빼고</div>`;
 }
 function upd(code) {
   const r = D.rows.find(x => x.code === code), el = document.getElementById('p_' + code);
   const tmp = document.createElement('div'); tmp.innerHTML = rowHtml(r);
   el.className = tmp.firstElementChild.className;
   el.querySelector('.psy-left').innerHTML = tmp.firstElementChild.querySelector('.psy-left').innerHTML;
+  el.querySelector('.psy-cas').innerHTML = tmp.firstElementChild.querySelector('.psy-cas').innerHTML;
   head();
 }
 function nextIn(e, el) {
@@ -119,7 +133,7 @@ function render() {
   document.getElementById('people').innerHTML = peopleHtml(D.staff, S.who, 'pickWho', '기록하는 사람');
   document.getElementById('rows').innerHTML = D.rows.length ? D.rows.map(rowHtml).join('')
     : '<div class="pad muted">향정으로 표시된 약이 없어요. 약품 관리에서 향정 칸을 체크하세요.</div>';
-  const days = D.week.map(md);
+  const days = D.week.map(mdw);
   document.getElementById('hist').innerHTML = `<table class="psy-hist"><thead><tr><th>약</th>${days.map((d, k) => `<th class="r">${d}</th>`).join('')}<th class="r">잔량</th></tr></thead><tbody>` +
     D.rows.map(r => `<tr><td>${esc(r.name)}</td>${r.week.map(v => `<td class="r ${v == null ? 'muted' : ''}">${v == null ? '-' : fmt(v)}</td>`).join('')}<td class="r"><b style="color:var(--g)">${r.now == null ? '—' : fmt(r.now)}</b></td></tr>`).join('') + '</tbody></table>';
   head();
