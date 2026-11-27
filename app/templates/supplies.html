@@ -4,20 +4,35 @@
 <div class="row between" style="align-items:flex-end;gap:12px">
   <div>
     <h1>비품 관리</h1>
-    <p class="sub">간식·사무용품·위생용품처럼 약이 아닌 물건의 재고. 쓴 양·들어온 양은 숫자로 적고, 살 것은 수량을 적어 <b>결재</b>로 올려요.</p>
+    <p class="sub">간식·사무용품·위생용품처럼 약이 아닌 물건의 재고. 쓴 양·들어온 양은 숫자로 적고, 살 것은 <b>[담기]</b> → 오른쪽 장바구니에서 수량을 적어 <b>결재</b>로 올려요.</p>
   </div>
   <div class="row" style="gap:8px">
     <a class="btn" href="{{ url_for('main.supplies_approve') }}" style="font-weight:700;color:var(--g);border-color:var(--g)">결재함
       {% if data.wait %}<span class="sp-cnt">{{ data.wait }}</span>{% endif %}{% if data.okn %}<span class="sp-cnt ok">살 것 {{ data.okn }}</span>{% endif %}</a>
-    <button class="sp-send" onclick="openReq()">+ 구매 요청</button>
     <button class="primary" onclick="openEd()">+ 비품 추가</button>
   </div>
 </div>
 
+<div class="split">
+<div class="main" style="display:flex;flex-direction:column;gap:16px">
 <section id="buy" class="sp-buy" hidden></section>
-
 <div class="row" style="gap:8px;flex-wrap:wrap" id="chips"></div>
 <div id="grid" class="sp-grid"></div>
+</div>
+<button id="cartFab" class="sp-fab" hidden onclick="document.querySelector('.sp-cart').scrollIntoView({behavior:'smooth'})"></button>
+<aside class="card side sp-cart">
+  <div class="row between" style="padding:14px 18px;border-bottom:1px solid var(--line);background:#F8FAF9"><h2>구매 요청 장바구니</h2><span class="muted small" id="cartN"></span></div>
+  <div id="cartItems" style="padding:6px 14px"></div>
+  <form class="sp-cart-new" onsubmit="event.preventDefault();addNew()">
+    <span class="muted small">목록에 없는 물건</span>
+    <div class="row" style="gap:6px;flex-wrap:nowrap"><input id="nwName" placeholder="이름" aria-label="새 물건 이름" style="flex:1;min-width:0"><input id="nwUnit" value="개" aria-label="단위" style="width:56px"></div>
+    <div class="row" style="gap:6px;flex-wrap:nowrap"><input id="nwLink" placeholder="구매 링크 (선택)" aria-label="새 물건 구매 링크" style="flex:1;min-width:0"><button>담기</button></div>
+  </form>
+  <div style="padding:12px 14px 16px;position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line)">
+    <button class="sp-send sp-go" id="goBtn" onclick="sendCart()" disabled>결재 올리기</button>
+  </div>
+</aside>
+</div>
 
 <section class="card" style="overflow:hidden">
   <div class="row between pad" style="padding:12px 18px"><h2>최근 기록</h2><span class="muted small">잘못 누른 [썼어요]·[들어왔어요]는 오른쪽 [되돌리기]</span></div>
@@ -51,23 +66,6 @@
   </form>
 </div>
 
-<div id="rq" class="sheet-bg" hidden onclick="if(event.target===this)closeReq()">
-  <div class="card sp-cm" style="width:min(680px,100%)">
-    <div class="row between pad" style="border-bottom:1px solid var(--line)"><h2 style="font-size:18px">구매 요청 (결재 올리기)</h2>
-      <button type="button" onclick="closeReq()" aria-label="닫기" style="border:0">✕</button></div>
-    <div class="pad" style="display:flex;flex-direction:column;gap:8px">
-      <p class="muted small" style="margin:0">살 물건과 수량을 적어요. 목록에 없는 물건도 이름을 그대로 적으면 되고, 링크를 넣으면 결재함에서 바로 열 수 있어요.</p>
-      <datalist id="supNames"></datalist>
-      <div id="rqRows" style="display:flex;flex-direction:column;gap:8px"></div>
-      <button type="button" class="sp-dash" onclick="addReqRow()" style="align-self:flex-start">+ 한 줄 더</button>
-    </div>
-    <div class="row between pad" style="border-top:1px solid var(--line);background:#F8FAF9">
-      <span class="muted small" id="rqWho"></span>
-      <div class="row" style="gap:8px"><button type="button" onclick="closeReq()">취소</button><button class="sp-send" onclick="sendReq2()">결재 올리기</button></div>
-    </div>
-  </div>
-</div>
-
 <div id="catBox" class="sheet-bg" hidden onclick="if(event.target===this)closeCats()">
   <div class="card sp-cm">
     <div class="row between pad" style="border-bottom:1px solid var(--line)"><h2 style="font-size:18px">분류 관리</h2>
@@ -98,20 +96,18 @@ const linkHtml = r => r.links.map(l => `<a href="${esc(l.url)}" target="_blank" 
 
 function render() {
   const low = D.rows.filter(r => r.low);
-  // 살 것
+  // 살 것 (재고가 기준 아래) → [담기]로 장바구니에
   const buy = document.getElementById('buy');
   buy.hidden = !low.length;
-  const inCart = low.filter(r => S.cart[r.id] && !r.req).length;
-  buy.innerHTML = `<div class="row between"><b style="font-size:17px;color:var(--amb)">살 것 ${low.length}개 · 살 수량을 적고 결재에 담아요</b>
-      <button class="sp-send" onclick="sendReq()" ${inCart ? '' : 'disabled'}>담은 ${inCart}개 결재 올리기</button></div>` +
+  const can = low.filter(r => !r.req && !(r.id in S.cart)).length;
+  buy.innerHTML = `<div class="row between"><b style="font-size:17px;color:var(--amb)">살 것 ${low.length}개 · 재고가 기준 아래로 내려갔어요</b>
+      ${can ? `<button class="sp-send" onclick="addCart(0,true)">살 것 ${can}개 모두 담기</button>` : ''}</div>` +
     low.map(r => `<div class="sp-brow">
       <div><b>${esc(r.name)}</b> <span class="muted small">· ${esc(r.cat || '분류 없음')}</span></div>
       <span style="color:var(--red);font-weight:700">${fmt(r.qty)}${esc(r.unit)} 남음 <span class="muted small" style="font-weight:400">/ ${fmt(r.min)}${esc(r.unit)}이면 사기</span></span>
-      <div class="row" style="gap:6px">${linkHtml(r) || `<span class="muted small">링크 없음 · <a href="#" onclick="openEd(${r.id});return false">링크 넣기</a></span>`}${r.price ? `<span class="muted small">단가 ${won(r.price)}</span>` : ''}</div>
+      <div class="row" style="gap:6px">${linkHtml(r) || `<span class="muted small">링크 없음 · <a href="#" onclick="openEd(${r.id});return false">링크 넣기</a></span>`}</div>
       ${r.req ? `<span class="sp-st ${r.req.status}">${r.req.status === 'wait' ? '결재 대기' : '승인됨 · 살 것'} ${fmt(r.req.qty)}${esc(r.unit)}</span>`
-        : `<div class="row" style="gap:6px;flex-wrap:nowrap"><input class="sp-q" inputmode="decimal" aria-label="${esc(r.name)} 살 수량" value="${esc(S.cart[r.id] || '')}" placeholder="수량"
-            oninput="S.cart[${r.id}]=this.value;if(!n(this.value))delete S.cart[${r.id}];saveCart();renderBuyBtn()"><span class="small">${esc(r.unit)}</span>
-            <span class="muted small">${S.cart[r.id] ? '담음' : ''}</span></div>`}
+        : r.id in S.cart ? `<button class="sp-in" onclick="rmCart(${r.id})">✓ 담음 (빼기)</button>` : `<button class="sp-reqbtn" onclick="addCart(${r.id})">+ 담기</button>`}
     </div>`).join('');
   // 분류 칩
   const cnt = c => D.rows.filter(r => (r.cat || '') === c).length;
@@ -123,6 +119,7 @@ function render() {
     `<button class="chip sp-dash" onclick="manageCats(true)">+ 분류 추가</button><button class="chip" onclick="manageCats()">분류 관리</button>
      <span class="grow"></span><input id="q" placeholder="이름으로 찾기" value="${esc(S.q)}" oninput="S.q=this.value;renderGrid()" style="width:200px" aria-label="비품 검색">`;
   renderGrid();
+  renderCart();
   // 기록
   document.getElementById('log').innerHTML = D.log.length ? D.log.map(l => `<div class="sp-lrow">
       <span class="muted">${l.at.slice(5, 16).replace('-', '/')}</span><span>${esc(l.name)}</span>
@@ -131,10 +128,6 @@ function render() {
       ${l.kind === 'use' || l.kind === 'in' ? `<button class="sp-undo" onclick="undo(${l.id})">되돌리기</button>` : '<span></span>'}</div>`).join('')
     : '<div class="pad muted">아직 기록이 없어요.</div>';
 }
-function renderBuyBtn() {
-  const k = D.rows.filter(r => r.low && !r.req && S.cart[r.id]).length;
-  const b = document.querySelector('.sp-send'); if (b) { b.textContent = `담은 ${k}개 결재 올리기`; b.disabled = !k; }
-}
 function renderGrid() {
   const q = S.q.trim().toLowerCase();
   const rows = D.rows.filter(r => (S.cat === '' || (S.cat === '__low' ? r.low : (r.cat || '') === S.cat)) && (!q || r.name.toLowerCase().includes(q)));
@@ -142,11 +135,11 @@ function renderGrid() {
     const pct = r.min > 0 ? Math.min(100, r.qty / (r.min * 3) * 100) : 100;
     return `<article class="card sp-card ${r.low ? 'low' : ''}" id="s_${r.id}">
       <div class="row between" style="align-items:flex-start;flex-wrap:nowrap"><div style="min-width:0"><b style="font-size:16px">${esc(r.name)}</b><div class="muted small">${esc(r.cat || '분류 없음')}</div></div>
-        <span class="row" style="gap:6px;flex-wrap:nowrap"><button class="sp-info sp-reqbtn" onclick="openReq(${r.id})" ${r.req ? 'disabled title="이미 결재 중"' : ''}>구매 요청</button><button class="sp-info" onclick="openEd(${r.id})">정보</button></span></div>
-      <div class="row" style="align-items:baseline;gap:6px"><b style="font-size:30px">${fmt(r.qty)}</b><span>${esc(r.unit)}</span>
+        <span class="row" style="gap:6px;flex-wrap:nowrap">${r.req ? '' : r.id in S.cart ? `<button class="sp-info sp-in" onclick="rmCart(${r.id})">✓ 담음</button>` : `<button class="sp-info sp-reqbtn" onclick="addCart(${r.id})">+ 담기</button>`}<button class="sp-info" onclick="openEd(${r.id})">정보</button></span></div>
+      <div class="row" style="align-items:baseline;gap:6px;flex-wrap:nowrap"><b style="font-size:30px">${fmt(r.qty)}</b><span style="white-space:nowrap">${esc(r.unit)}</span>
         <span class="muted small" style="margin-left:auto">${r.min > 0 ? fmt(r.min) + esc(r.unit) + '이면 사기' : ''}</span></div>
       <div class="sp-bar"><span style="width:${pct}%;background:${r.low ? 'var(--red)' : pct < 50 ? '#C98A3A' : 'var(--g)'}"></span></div>
-      <div class="row" style="gap:6px;flex-wrap:nowrap"><input class="sp-q" inputmode="decimal" value="1" aria-label="${esc(r.name)} 수량" id="q_${r.id}"><span class="muted small">${esc(r.unit)}</span>
+      <div class="row" style="gap:6px;flex-wrap:nowrap"><input class="sp-q" inputmode="decimal" value="1" aria-label="${esc(r.name)} 수량" id="q_${r.id}"><span class="muted small" style="white-space:nowrap">${esc(r.unit)}</span>
         <button class="grow" onclick="adj(${r.id},'use')">썼어요</button><button class="grow sp-in" onclick="adj(${r.id},'in')">들어왔어요</button></div>
       <div class="row small muted" style="gap:8px">${linkHtml(r)}${r.req ? `<span class="sp-st ${r.req.status}">${r.req.status === 'wait' ? '결재 대기' : '승인됨'} ${fmt(r.req.qty)}${esc(r.unit)}</span>` : ''}${r.lastIn ? `<span>최근 들어옴 ${r.lastIn.slice(5).replace('-', '/')}</span>` : ''}</div>
       ${r.memo ? `<div class="small muted" style="white-space:pre-line">${esc(r.memo)}</div>` : ''}
@@ -177,59 +170,66 @@ async function undo(lid) {
   const j = await post('/api/supplies/undo/' + lid);
   if (j.ok) location.reload();
 }
-async function sendReq() {
-  const items = D.rows.filter(r => r.low && !r.req && n(S.cart[r.id])).map(r => ({ id: r.id, qty: n(S.cart[r.id]) }));
-  if (!items.length) return;
+
+// 구매 요청 장바구니: S.cart = {id: 수량문자열}, S.extra = [{name, unit, link, qty}]
+S.extra = []; try { S.extra = JSON.parse(localStorage.getItem('supplyExtra') || '[]'); } catch (e) {}
+const saveExtra = () => { try { localStorage.setItem('supplyExtra', JSON.stringify(S.extra)); } catch (e) {} };
+function addCart(id, all) {
+  const ids = all ? D.rows.filter(r => r.low && !r.req).map(r => r.id) : [id];
+  ids.forEach(i => { if (!(i in S.cart)) S.cart[i] = ''; });
+  saveCart(); render();
+  const last = document.querySelector(`#cartItems [data-c="${ids[ids.length - 1]}"]`);
+  if (last && !all) last.focus();
+}
+function rmCart(id) { delete S.cart[id]; saveCart(); render(); }
+function addNew() {
+  const nm = document.getElementById('nwName').value.trim();
+  if (!nm) { document.getElementById('nwName').focus(); return; }
+  const ex = D.rows.find(r => r.name === nm);
+  if (ex) { addCart(ex.id); document.getElementById('nwName').value = ''; return; }
+  S.extra.push({ name: nm, unit: document.getElementById('nwUnit').value.trim() || '개', link: document.getElementById('nwLink').value.trim(), qty: '' });
+  saveExtra(); ['nwName', 'nwLink'].forEach(i => document.getElementById(i).value = ''); document.getElementById('nwUnit').value = '개';
+  render();
+  const inp = document.querySelectorAll('#cartItems [data-x]'); if (inp.length) inp[inp.length - 1].focus();
+}
+function renderCart() {
+  Object.keys(S.cart).forEach(id => { const r = D.rows.find(x => x.id === +id); if (!r || r.req) delete S.cart[id]; });
+  const ids = Object.keys(S.cart).map(Number);
+  const rowsH = ids.map(id => { const r = D.rows.find(x => x.id === id); return `<div class="sp-crow">
+      <div style="min-width:0"><b>${esc(r.name)}</b><div class="muted small">지금 ${fmt(r.qty)}${esc(r.unit)}${r.links[0] ? ` · <a href="${esc(r.links[0].url)}" target="_blank" rel="noopener noreferrer">${esc(r.links[0].mall)} ↗</a>` : ''}</div></div>
+      <input class="sp-q" inputmode="decimal" placeholder="수량" data-c="${id}" value="${esc(S.cart[id])}" aria-label="${esc(r.name)} 살 수량"
+        oninput="S.cart[${id}]=this.value;saveCart();cartBtn()" onkeydown="if(event.key==='Enter')cartNext(this)"><span class="small sp-cu">${esc(r.unit)}</span>
+      <button class="sp-x" aria-label="${esc(r.name)} 빼기" onclick="rmCart(${id})">✕</button></div>`; }).join('')
+    + S.extra.map((x, i) => `<div class="sp-crow">
+      <div style="min-width:0"><b>${esc(x.name)}</b> <span class="tag new">새 물건</span><div class="muted small">${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener noreferrer">링크 ↗</a>` : '링크 없음'}</div></div>
+      <input class="sp-q" inputmode="decimal" placeholder="수량" data-x="${i}" value="${esc(x.qty)}" aria-label="${esc(x.name)} 살 수량"
+        oninput="S.extra[${i}].qty=this.value;saveExtra();cartBtn()" onkeydown="if(event.key==='Enter')cartNext(this)"><span class="small sp-cu">${esc(x.unit)}</span>
+      <button class="sp-x" aria-label="${esc(x.name)} 빼기" onclick="S.extra.splice(${i},1);saveExtra();render()">✕</button></div>`).join('');
+  document.getElementById('cartItems').innerHTML = rowsH || '<div class="muted small" style="padding:14px 4px">비어 있어요. 왼쪽 카드나 살 것의 <b>[담기]</b>를 누르세요.</div>';
+  document.getElementById('cartN').textContent = (ids.length + S.extra.length) ? `${ids.length + S.extra.length}개` : '';
+  const fab = document.getElementById('cartFab'), tot = ids.length + S.extra.length;
+  fab.hidden = !tot; fab.textContent = `장바구니 ${tot}개 · 수량 적고 결재 올리기 ↓`;
+  cartBtn();
+}
+function cartNext(el) { const all = [...document.querySelectorAll('#cartItems .sp-q')]; const nx = all[all.indexOf(el) + 1]; if (nx) nx.focus(); }
+function cartItems() {
+  return [...Object.keys(S.cart).filter(id => n(S.cart[id]) > 0).map(id => ({ id: +id, qty: n(S.cart[id]) })),
+    ...S.extra.filter(x => n(x.qty) > 0).map(x => ({ name: x.name, unit: x.unit, link: x.link, qty: n(x.qty) }))];
+}
+function cartBtn() {
+  const total = Object.keys(S.cart).length + S.extra.length, k = cartItems().length, b = document.getElementById('goBtn');
+  b.disabled = !k;
+  b.textContent = !total ? '결재 올리기' : k < total ? `결재 올리기 (${k}개 · 수량 안 적은 ${total - k}개 남음)` : `${k}개 결재 올리기`;
+}
+async function sendCart() {
+  const items = cartItems(); if (!items.length) return;
   const j = await post('/api/supplies/request', { items, who: savedStaff() });
   if (!j.ok) return;
-  S.cart = {}; saveCart();
+  items.forEach(it => { if (it.id) delete S.cart[it.id]; });
+  S.extra = S.extra.filter(x => !(n(x.qty) > 0));
+  saveCart(); saveExtra();
   toast(`${j.n}개를 결재함에 올렸어요.`); setTimeout(() => location.reload(), 900);
 }
-
-// 구매 요청 (아무 비품이나, 목록에 없는 물건도)
-const byName = nm => D.rows.find(r => r.name === nm.trim());
-function openReq(id) {
-  document.getElementById('supNames').innerHTML = D.rows.map(r => `<option value="${esc(r.name)}">`).join('');
-  document.getElementById('rqRows').innerHTML = '';
-  const r = D.rows.find(x => x.id === id);
-  addReqRow(r ? r.name : '');
-  const who = savedStaff();
-  document.getElementById('rqWho').textContent = who ? `요청하는 사람: ${who}` : '';
-  document.getElementById('rq').hidden = false;
-  const qs = document.querySelectorAll('#rqRows input');
-  (r ? qs[1] : qs[0]).focus();
-}
-function closeReq() { document.getElementById('rq').hidden = true; }
-function addReqRow(name) {
-  const box = document.createElement('div'); box.className = 'sp-rq';
-  box.innerHTML = `<div class="row" style="gap:8px;flex-wrap:nowrap">
-      <input list="supNames" placeholder="비품 이름 (목록에서 고르거나 새로 적기)" value="${esc(name || '')}" aria-label="비품 이름" style="flex:1;min-width:0" oninput="reqRowUpd(this.closest('.sp-rq'))">
-      <input class="sp-q" inputmode="decimal" placeholder="수량" aria-label="살 수량"><span class="sp-rq-u small" style="width:34px"></span>
-      <button type="button" aria-label="이 줄 지우기" onclick="this.closest('.sp-rq').remove()" style="min-width:40px;padding:0">✕</button></div>
-    <div class="sp-rq-info small muted"></div>
-    <div class="sp-rq-new row" style="gap:8px;flex-wrap:nowrap;display:none">
-      <input placeholder="구매 링크 (선택)" aria-label="구매 링크" style="flex:1;min-width:0"><input placeholder="단위" aria-label="단위" value="개" style="width:64px"></div>`;
-  document.getElementById('rqRows').appendChild(box);
-  reqRowUpd(box);
-}
-function reqRowUpd(box) {
-  const nm = box.querySelector('input').value, r = nm.trim() && byName(nm);
-  box.querySelector('.sp-rq-u').textContent = r ? r.unit : '';
-  box.querySelector('.sp-rq-new').style.display = nm.trim() && !r ? 'flex' : 'none';
-  box.querySelector('.sp-rq-info').innerHTML = r
-    ? `지금 ${fmt(r.qty)}${esc(r.unit)}${r.links.length ? ' · ' + linkHtml(r) : ' · 링크 없음'}${r.req ? ` · <b style="color:var(--amb)">이미 ${r.req.status === 'wait' ? '결재 대기' : '승인됨'} ${fmt(r.req.qty)}${esc(r.unit)}</b>` : ''}`
-    : nm.trim() ? '목록에 없는 물건이에요. 요청하면 비품 목록에도 추가돼요.' : '';
-}
-async function sendReq2() {
-  const items = [...document.querySelectorAll('#rqRows .sp-rq')].map(b => {
-    const ins = b.querySelectorAll('input'), nm = ins[0].value.trim(), q = n(ins[1].value), r = nm && byName(nm);
-    return !nm || !q ? null : r ? { id: r.id, qty: q } : { name: nm, qty: q, link: ins[2].value.trim(), unit: ins[3].value.trim() };
-  }).filter(Boolean);
-  if (!items.length) { toast('살 물건과 수량을 적어주세요.'); return; }
-  const j = await post('/api/supplies/request', { items, who: savedStaff() });
-  if (j.ok) { toast(`${j.n}개를 결재함에 올렸어요.`); setTimeout(() => location.reload(), 900); }
-}
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.getElementById('rq').hidden) closeReq(); });
 
 // 분류
 async function addCat(sel) {   // 정보 창의 [+ 새 분류 만들기]
