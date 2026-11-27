@@ -5,7 +5,7 @@ eghis 처방 통계로 원내 약 재고를 추정하고, 도매상별 카카오
 
 - 🚀 **처음이라면: [시작 가이드](docs/시작_가이드.md)** (설치부터 첫 주문까지 30분 · [PDF](docs/시작_가이드.pdf))
 - 📄 소개 자료(화면 캡처 포함): [docs/프로그램_소개.pdf](docs/프로그램_소개.pdf)
-- 🎬 사용법 영상: [docs/videos](docs/videos) (① 처음 설정 ~ ⑥ 리포트, 각 1분 내외)
+- 🎬 사용법 영상: [설치 · 처음 설정 · 평소 사용 한 편 (7분 30초, 타임스탬프)](docs/videos)
 - 🖼️ 카드 이미지: [앱 소개 8장](docs/cards/1_앱소개) · [설치·세팅 8장](docs/cards/2_설치세팅) (1080×1080, 카톡·SNS 공유용)
 - 📦 [최신 릴리스 내려받기](https://github.com/sonagi123/drug_order_public/releases/latest)
 
