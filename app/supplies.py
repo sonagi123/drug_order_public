@@ -201,10 +201,23 @@ def api_supply_cat():
 def api_supply_request():
     """살 것 결재 올리기: [{id, qty}, ...]"""
     j = request.get_json() or {}
-    items = [(int(x["id"]), num(x.get("qty"))) for x in (j.get("items") or []) if x.get("id")]
-    items = [(i, q) for i, q in items if q and q > 0]
+    items = []
+    for x in j.get("items") or []:
+        q = num(x.get("qty"))
+        if not q or q <= 0:
+            continue
+        if x.get("id"):
+            items.append((int(x["id"]), q))
+        elif (x.get("name") or "").strip():  # 목록에 없는 물건: 비품으로 먼저 만들고 요청
+            nm = x["name"].strip()
+            ex = db.one("SELECT id FROM supplies WHERE active=1 AND name=?", (nm,))
+            sid = ex["id"] if ex else db.run(
+                "INSERT INTO supplies(name, cat, unit, qty, min_qty, links, created_at, updated_at) VALUES (?,?,?,0,0,?,?,?)",
+                (nm, (x.get("cat") or "").strip(), (x.get("unit") or "개").strip() or "개",
+                 json.dumps(clean_links([x.get("link")]), ensure_ascii=False), db.now(), db.now())).lastrowid
+            items.append((sid, q))
     if not items:
-        return err("살 수량을 적어주세요.")
+        return err("살 물건과 수량을 적어주세요.")
     for sid, q in items:
         r = db.one("SELECT price FROM supplies WHERE id=? AND active=1", (sid,))
         if r:
@@ -255,3 +268,20 @@ def api_supply_decide():
         n += db.run("UPDATE supply_reqs SET status=?, decided_at=? WHERE id=? AND status IN ('wait','ok','no')",
                     (act, db.now() if act != "wait" else None, rid)).rowcount
     return ok(n=n)
+
+
+@bp.post("/api/supplies/<int:sid>/link")
+def api_supply_link(sid):
+    """결재함에서 링크 바로 넣기."""
+    j = request.get_json() or {}
+    new = clean_links([j.get("url")])
+    if not new:
+        return err("http로 시작하는 주소를 넣어주세요.")
+    r = db.one("SELECT links FROM supplies WHERE id=?", (sid,))
+    if not r:
+        return err("없는 비품이에요.")
+    links = json.loads(r["links"] or "[]")
+    if new[0] not in links:
+        links.append(new[0])
+    db.run("UPDATE supplies SET links=?, updated_at=? WHERE id=?", (json.dumps(links, ensure_ascii=False), db.now(), sid))
+    return ok()

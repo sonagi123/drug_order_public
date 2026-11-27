@@ -300,3 +300,8 @@ tr.done td{background:#F1F8F4}
 .sp-cm-ord button:disabled{opacity:.3}
 .sp-cm-n{width:64px;text-align:right;flex:none}
 .sp-cm-add{gap:8px;margin-top:6px;padding-top:10px;border-top:1px dashed var(--bd);flex-wrap:nowrap}
+.sp-rq{border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:6px}
+.sp-rq-info .sp-link{padding:2px 8px;font-size:12px}
+.sp-reqbtn{border-color:#E8B062;color:var(--amb);font-weight:700}
+.sp-reqbtn:disabled{opacity:.4;cursor:default}
+.sp-alinks .sp-link{border-color:var(--g);color:var(--g)}
