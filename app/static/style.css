@@ -335,34 +335,3 @@ tr.done td{background:#F1F8F4}
 .lv-left{background:var(--gl);border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;color:var(--g)}
 .lv-left b{font-size:24px}
 @media (max-width:640px){.lv-day{min-height:58px;font-size:11px}.lv-side{position:static}}
-/* 메뉴 묶음 */
-nav.menu{flex:1;align-items:center}
-nav.menu .mg{display:inline-flex;align-items:center;gap:2px;flex-shrink:0}
-nav.menu .mg>b{font-size:11px;color:var(--mut);font-weight:700;margin:0 4px 0 6px;letter-spacing:.05em}
-nav.menu .mg+.mg:not(.tail){border-left:1px solid var(--line);padding-left:6px;margin-left:4px}
-nav.menu .mg.tail{margin-left:auto}
-nav.menu .mg.tail a{font-size:14px;padding:8px 10px;color:var(--mut)}
-nav.menu .mg.tail a.on{color:var(--g)}
-/* 인수인계·공지 띠 */
-.nb{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.nb.hot{border-color:#E8A6A0;background:#FFF6F5}
-.nb-bar{display:flex;align-items:center;gap:10px;padding:6px 8px 6px 14px;min-height:48px}
-.nb-t{white-space:nowrap}
-.nb-first{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nb.hot .nb-first{color:var(--red);font-weight:700}
-.nb-panel{display:none;border-top:1px solid var(--line);padding:10px 14px 14px;flex-direction:column;gap:10px}
-.nb.open .nb-panel{display:flex}
-.nb-h{font-size:13px;font-weight:700;color:var(--mut)}
-.nb-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
-.nb-it{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:10px;background:var(--line2)}
-.nb-it.pin{background:#FDECEA;color:var(--red);font-weight:700}
-.nb-it.done .nb-txt{color:var(--mut);text-decoration:line-through}
-.nb-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;word-break:break-all}
-.nb-txt .small{font-weight:400;text-decoration:none}
-.nb-ck{width:40px;height:40px;border-radius:10px;padding:0;font-size:18px;flex-shrink:0;color:var(--g)}
-.nb-ck.on{color:var(--mut)}
-.nb-ic{border:0;background:none;color:var(--mut);padding:8px;min-width:40px;min-height:40px}
-.nb-ic.on{color:#D9822B}
-.nb-add{display:flex;flex-direction:column;gap:8px;border-top:1px dashed var(--line);padding-top:10px}
-.nb-add input:not([type]){width:100%}
-@media (max-width:640px){.nb-bar{flex-wrap:wrap}.nb-t{margin-right:auto}.nb-first{flex-basis:100%;order:3;white-space:normal}nav.menu .mg.tail{margin-left:0}}
