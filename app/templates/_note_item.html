@@ -1,0 +1,11 @@
+<li class="nb-it {{ 'pin' if x.pinned and not x.done_at }} {{ 'done' if x.done_at or (x.day and x.day < notes.today) }}">
+  {% if x.done_at or (x.day and x.day < notes.today) %}
+    <button type="button" class="nb-ck on" onclick="nbSet({{ x.id }},'undo')" aria-label="다시 띄우기" title="다시 띄우기">↺</button>
+  {% else %}
+    <button type="button" class="nb-ck" onclick="nbSet({{ x.id }},'done')" aria-label="완료" title="완료하면 내려가요">✓</button>
+  {% endif %}
+  <span class="nb-txt">{{ x.body }}
+    <span class="muted small">{% if x.who %}{{ x.who }} · {% endif %}{% if x.day %}{{ x.day[5:].replace('-', '/') }}만 · {% endif %}{{ x.created_at[5:10].replace('-', '/') }}{% if x.done_at %} · {{ x.done_at[5:10].replace('-', '/') }} 완료{% endif %}</span></span>
+  {% if not x.done_at %}<button type="button" class="nb-ic {{ 'on' if x.pinned }}" onclick="nbSet({{ x.id }},'{{ 'unpin' if x.pinned else 'pin' }}')" aria-label="{{ '고정 풀기' if x.pinned else '중요 고정' }}" title="{{ '고정 풀기' if x.pinned else '중요(맨 위 고정)' }}">★</button>{% endif %}
+  <button type="button" class="nb-ic" onclick="nbSet({{ x.id }},'delete')" aria-label="지우기" title="지우기">✕</button>
+</li>

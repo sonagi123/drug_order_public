@@ -113,6 +113,11 @@ CREATE TABLE IF NOT EXISTS psy_usage (
   code TEXT NOT NULL, date TEXT NOT NULL, qty REAL NOT NULL, staff TEXT, created_at TEXT,
   PRIMARY KEY (code, date)
 );
+-- 인수인계·공지: day가 있으면 그날만 띄움, pinned=중요(맨 위 고정)
+CREATE TABLE IF NOT EXISTS notes (
+  id INTEGER PRIMARY KEY, body TEXT NOT NULL, who TEXT, day TEXT, pinned INTEGER DEFAULT 0,
+  done_at TEXT, created_at TEXT
+);
 -- 직원 연차: 하루(또는 반나절)마다 한 줄. grp = 한 번에 신청한 묶음
 CREATE TABLE IF NOT EXISTS leaves (
   id INTEGER PRIMARY KEY, staff_id INTEGER NOT NULL, date TEXT NOT NULL, kind TEXT DEFAULT 'full',

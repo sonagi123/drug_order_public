@@ -4,20 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{% endblock %} · {{ clinic or "" }} 약품관리</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=29">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=30">
 <script src="{{ url_for('static', filename='common.js') }}?v=5"></script>
 </head>
 <body>
 <header class="top"><div class="in">
   <div class="brand">{{ clinic }} 약품관리</div>
   <nav class="menu">
-    {% set menu = [('main.order','주문'),('main.receive','입고 체크'),('main.psy','향정 관리'),('main.drugs','약품 관리'),('main.supplies','비품'),('main.leave','연차'),('main.report','리포트'),('main.upload','업로드'),('main.settings','설정'),('main.help_page','도움말')] %}
-    {% for ep, label in menu %}
-      <a href="{{ url_for(ep) }}" class="{{ 'on' if nav == ep or (ep == 'main.receive' and nav in ('main.backorder', 'main.receive_done', 'main.receive_export')) or (ep == 'main.psy' and nav == 'main.psy_review') or (ep == 'main.upload' and nav == 'main.links') or (ep == 'main.order' and nav == 'main.orders_history') or (ep == 'main.supplies' and nav == 'main.supplies_approve') else '' }}">{{ label }}</a>
+    {% set also = {'main.receive': ('main.backorder', 'main.receive_done', 'main.receive_export'), 'main.psy': ('main.psy_review',), 'main.upload': ('main.links',), 'main.order': ('main.orders_history',), 'main.supplies': ('main.supplies_approve',)} %}
+    {% for group, items in [('약', [('main.order','주문'),('main.receive','입고 체크'),('main.psy','향정 관리'),('main.drugs','약품 관리')]), ('병원', [('main.supplies','비품'),('main.leave','연차')]), ('', [('main.report','리포트'),('main.upload','업로드'),('main.settings','설정'),('main.help_page','도움말')])] %}
+      <span class="mg {{ 'tail' if not group }}">{% if group %}<b>{{ group }}</b>{% endif %}
+      {% for ep, label in items %}<a href="{{ url_for(ep) }}" class="{{ 'on' if nav == ep or nav in also.get(ep, ()) }}">{{ label }}</a>{% endfor %}</span>
     {% endfor %}
   </nav>
 </div></header>
 <main class="{% block mainclass %}{% endblock %}">
+{% include "_notes.html" %}
 {% if setup_todo and nav not in ('main.help_page',) and not (tour and tour.state != 'done') %}
 <div class="note row between" style="gap:10px;border:2px solid var(--g)">
   <span><b>처음 설정이 남았어요:</b>
