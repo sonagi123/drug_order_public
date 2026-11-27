@@ -1484,6 +1484,11 @@ def settings_post(action):
                 restart_later()
             else:
                 flash(out, "error" if "실패" in out or "찾지" in out else "ok")
+        elif action == "auto_update":
+            on = bool(f.get("on"))
+            db.set_setting("auto_update", "1" if on else "0")
+            flash("자동 업데이트를 켰어요. 밤에 새 버전이 있으면 알아서 받아요." if on else "자동 업데이트를 껐어요. [업데이트]를 눌러야 새 버전을 받아요.", "ok")
+            return redirect(url_for("main.settings") + "#update")
         elif action == "rollback":
             changed, out = maint.rollback()
             flash(out, "ok" if changed else "error")

@@ -130,6 +130,9 @@ DEFAULTS = {
     "watch_day": "0",
     "watch_time": "09:00",
     "watch_last": "",
+    "auto_update": "1",       # 밤에 새 버전이 있으면 자동 업데이트 (설정에서 끌 수 있음)
+    "auto_update_day": "",    # 마지막으로 확인한 날 (하루 한 번)
+    "auto_update_msg": "",    # 마지막 자동 확인 결과 (설정 화면에 표시)
     "psy_mode": "excel",  # 향정 재고: manual(향정 관리 기록) / excel(처방 통계)
 }
 

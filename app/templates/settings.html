@@ -114,6 +114,11 @@
     <section class="card pad" id="update" style="display:flex;flex-direction:column;gap:10px">
       <h2>프로그램 업데이트</h2>
       <p class="muted small" style="margin:0">현재 버전: {{ version }}<br>업데이트 전에 자동으로 백업하고, 끝나면 저절로 다시 시작해요.</p>
+      <form method="post" action="{{ url_for('main.settings_post', action='auto_update') }}" class="row" style="gap:10px;align-items:flex-start;flex-wrap:nowrap">
+        <input type="checkbox" id="autoUp" name="on" value="1" {{ 'checked' if s.auto_update == '1' }} onchange="this.form.submit()" style="width:20px;height:20px;margin-top:2px;flex:none">
+        <label for="autoUp"><b>자동 업데이트</b><br><span class="muted small">밤(0시 30분~6시)에 새 버전이 있으면 백업 → 업데이트 → 다시 시작. 밤에 PC가 꺼져 있었으면 아침에 켤 때(오전 10시 전) 한 번. 서버 PC만 하면 되고, 직원 PC·폰은 그대로 써요.</span></label>
+      </form>
+      {% if s.auto_update_msg %}<p class="small" style="margin:0;color:{{ 'var(--amb)' if '실패' in s.auto_update_msg or '새 버전이 있어요' in s.auto_update_msg else 'var(--mut)' }}">마지막 자동 확인: {{ s.auto_update_msg }}</p>{% endif %}
       <div class="row">
         <form method="post" action="{{ url_for('main.settings_post', action='update') }}" onsubmit="const b=this.querySelector('button');if(b.disabled)return false;b.disabled=true;b.textContent='업데이트 중… (1분쯤 걸려요)';return true"><button class="primary">업데이트</button></form>
         <form method="post" action="{{ url_for('main.settings_post', action='rollback') }}" onsubmit="return confirm('바로 전 버전으로 되돌릴까요?')"><button>이전 버전으로 되돌리기</button></form>

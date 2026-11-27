@@ -106,6 +106,7 @@ def start_scheduler():
                         backup_now("daily")
                 from . import autoimport
                 autoimport.scan()  # 5분마다 자동 읽기 폴더 확인
+                auto_update_tick(first=(n == 0))
             except Exception as e:  # 실패해도 서버가 멈추면 안 됨
                 print("scheduler error:", e)
             finally:
@@ -182,6 +183,51 @@ def _update():
     return True, out[-400:]
 
 
+def check_new():
+    """원격에 새 버전이 있는지 (받지는 않음). (새 커밋 수, 메시지)"""
+    code, out = _git("fetch", "origin", "main")
+    if code != 0:
+        return None, "새 버전 확인 실패: " + out[-200:]
+    code, n = _git("rev-list", "--count", "HEAD..origin/main")
+    if code != 0:
+        return None, "새 버전 확인 실패: " + n[-200:]
+    return int(n.strip() or 0), ""
+
+
+def auto_update_tick(first=False):
+    """하루 한 번, 진료가 없는 시간에 새 버전을 확인하고 있으면 받아서 다시 시작.
+    - 밤 0:30~6:00 (매일 백업 뒤)
+    - 밤에 PC가 꺼져 있었으면: 아침에 서버가 켜질 때(오전 10시 전) 한 번
+    실패하면 지금 버전 그대로 두고 설정 화면에 알려줌."""
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    if db.get_setting("auto_update_day") == today:
+        return
+    night = (now.hour, now.minute) >= (0, 30) and now.hour < 6
+    if not (night or (first and now.hour < 10)):
+        return
+    db.set_setting("auto_update_day", today)
+    stamp = now.strftime("%m/%d %H:%M")
+    if db.get_setting("auto_update") != "1":
+        n, err = check_new()
+        if n:
+            db.set_setting("auto_update_msg", f"{stamp} 확인 · 새 버전이 있어요 ({n}개 변경). [업데이트]를 눌러 받으세요.")
+        return
+    n, err = check_new()
+    if n is None:
+        db.set_setting("auto_update_msg", f"{stamp} {err}")
+        return
+    if n == 0:
+        db.set_setting("auto_update_msg", f"{stamp} 확인 · 최신 버전이에요.")
+        return
+    changed, out = update()
+    if changed:
+        db.set_setting("auto_update_msg", f"{stamp} 자동 업데이트했어요 ({n}개 변경).")
+        db.close()
+        os._exit(3)  # start.bat 이 다시 실행
+    db.set_setting("auto_update_msg", f"{stamp} 자동 업데이트 실패 · 지금 버전 그대로예요. {out[-200:]}")
+
+
 def rollback():
     prev = db.get_setting("prev_commit")
     if not prev:
@@ -189,4 +235,5 @@ def rollback():
     code, out = _git("reset", "--hard", prev)
     if code != 0:
         return False, out
-    return True, f"{prev[:7]} 버전으로 되돌렸어요. 다음 [업데이트] 때 다시 최신으로 바뀌어요."
+    db.set_setting("auto_update", "0")  # 되돌린 버전이 밤에 다시 바뀌지 않게
+    return True, f"{prev[:7]} 버전으로 되돌렸어요. 자동 업데이트는 껐어요. 다음 [업데이트] 때 다시 최신으로 바뀌어요."
