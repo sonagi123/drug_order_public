@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}비품 결재함{% endblock %}
+{% block body %}
+<div class="row between" style="align-items:flex-end;gap:12px">
+  <div>
+    <h1>비품 결재함</h1>
+    <p class="sub">직원이 올린 살 것을 쇼핑몰별로 묶어 보여줘요. 수량을 고치고 승인한 뒤, 쇼핑몰마다 상품 페이지를 한꺼번에 열어 장바구니에 담으면 돼요.</p>
+  </div>
+  <a class="btn" href="{{ url_for('main.supplies') }}">← 비품 목록</a>
+</div>
+<div class="tabs">
+  <a class="{{ 'on' if data.tab == 'wait' }}" href="?t=wait">결재 대기 {% if data.counts.wait %}<span class="sp-cnt">{{ data.counts.wait }}</span>{% endif %}</a>
+  <a class="{{ 'on' if data.tab == 'ok' }}" href="?t=ok">승인함 · 살 것 {% if data.counts.ok %}<span class="sp-cnt ok">{{ data.counts.ok }}</span>{% endif %}</a>
+  <a class="{{ 'on' if data.tab == 'done' }}" href="?t=done">구매 완료</a>
+  <a class="{{ 'on' if data.tab == 'no' }}" href="?t=no">반려</a>
+</div>
+<div id="groups" style="display:flex;flex-direction:column;gap:14px"></div>
+<div class="card pad sp-flow">
+  <div><b>① 직원이 요청</b><br><span>비품 → 살 것에 수량을 적고 [결재 올리기]</span></div>
+  <div><b>② 원장이 승인</b><br><span>수량 고치기 · 반려도 여기서</span></div>
+  <div><b>③ 쇼핑몰에서 구매</b><br><span>[한꺼번에 열기] → 각 페이지에서 장바구니</span></div>
+  <div><b>④ 도착하면 [들어왔어요]</b><br><span>승인한 수량이 재고에 더해지고 구매 완료로</span></div>
+</div>
+<div class="row between"><span class="muted">이번 달 비품 구매 (승인 기준, 단가 × 수량)</span><b style="font-size:20px">{{ data.month|won }}</b></div>
+
+<script>
+const D = {{ data|tojson }};
+const T = D.tab;
+const groups = {};
+D.rows.forEach(r => (groups[r.mall] = groups[r.mall] || []).push(r));
+const keys = Object.keys(groups).sort((a, b) => (a === '직접 구매') - (b === '직접 구매') || groups[b].length - groups[a].length);
+
+function rowHtml(r) {
+  const amt = r.price ? r.price * r.qty : null;
+  const edit = T === 'wait' || T === 'ok';
+  return `<div class="sp-arow" id="r_${r.id}">
+    ${T === 'wait' ? `<input type="checkbox" checked data-id="${r.id}" aria-label="${esc(r.name)} 선택" style="width:20px;height:20px">` : '<span></span>'}
+    <div style="min-width:0"><b>${esc(r.name)}</b> ${r.links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" class="small" style="font-weight:700;margin-left:6px">${esc(l.mall || '상품')} ↗</a>`).join('')}
+      ${r.memo ? `<div class="muted small">${esc(r.memo)}</div>` : ''}</div>
+    <span><span class="m-lbl">남은 양 </span><b style="color:${r.min > 0 && r.now <= r.min ? 'var(--red)' : 'var(--ink)'}">${fmt(r.now)}${esc(r.unit)}</b>${r.min > 0 ? ` <span class="muted small">/ ${fmt(r.min)}이면</span>` : ''}</span>
+    <span class="row" style="gap:6px;flex-wrap:nowrap">${edit ? `<input class="sp-q" inputmode="decimal" value="${r.qty}" data-q="${r.id}" aria-label="${esc(r.name)} 살 수량">` : `<b>${fmt(r.qty)}</b>`}${esc(r.unit)}</span>
+    <span class="r">${amt ? won(amt) : '<span class="muted">—</span>'}</span>
+    <span class="muted small">${esc(r.who || '요청')} · ${r.at.slice(5, 10).replace('-', '/')}${T === 'done' && r.done ? '<br>들어옴 ' + r.done.slice(5, 10).replace('-', '/') : ''}</span>
+    <span class="row" style="gap:6px;flex-wrap:nowrap;justify-content:flex-end">${
+      T === 'wait' ? `<button class="sp-in" onclick="decide([${r.id}],'ok')">승인</button><button class="danger" onclick="decide([${r.id}],'no')">반려</button>`
+      : T === 'ok' ? `<button class="sp-in" onclick="arrived(${r.id},${r.sid})">들어왔어요</button><button onclick="decide([${r.id}],'wait')" title="결재 대기로 되돌리기">취소</button>`
+      : T === 'no' ? `<button onclick="decide([${r.id}],'wait')">다시 결재 대기로</button>` : ''}</span>
+  </div>`;
+}
+function render() {
+  const el = document.getElementById('groups');
+  if (!D.rows.length) {
+    const EMPTY = { wait: '결재할 요청이 없어요. 직원이 비품 → 살 것에서 수량을 적어 올리면 여기 나와요.', ok: '승인한 것 중 아직 안 들어온 게 없어요.', done: '구매 완료 기록이 없어요.', no: '반려한 요청이 없어요.' };
+    el.innerHTML = `<div class="card pad muted">${EMPTY[T]}</div>`;
+    return;
+  }
+  el.innerHTML = keys.map(m => {
+    const rs = groups[m], sum = rs.reduce((a, r) => a + (r.price ? r.price * r.qty : 0), 0);
+    const nl = rs.filter(r => r.links.length).length;
+    return `<section class="card" style="overflow:hidden">
+      <div class="row sp-ghd" style="gap:10px">
+        <b style="font-size:17px">${esc(m)}</b><span class="muted small">${rs.length}건${sum ? ' · 약 ' + won(sum) : ''}</span><span class="grow"></span>
+        ${nl && (T === 'wait' || T === 'ok') ? `<button onclick="openAll('${esc(m).replace(/'/g, "\\'")}')" style="border-color:var(--g);color:var(--g);font-weight:700">${esc(m)} 상품 ${nl}개 한꺼번에 열기 ↗</button>` : ''}
+        ${T === 'wait' ? `<button class="primary" onclick="decideGroup('${esc(m).replace(/'/g, "\\'")}')">${esc(m)} ${rs.length}건 승인</button>` : ''}
+      </div>
+      <div class="sp-arow sp-ath"><span></span><span>비품</span><span>남은 양</span><span>살 수량</span><span class="r">예상 금액</span><span>요청</span><span></span></div>
+      ${rs.map(rowHtml).join('')}</section>`;
+  }).join('');
+}
+function qtys(ids) { const o = {}; ids.forEach(i => { const el = document.querySelector(`[data-q="${i}"]`); if (el) o[i] = el.value; }); return o; }
+async function decide(ids, act) {
+  if (act === 'no' && !confirm('반려할까요?')) return;
+  const j = await post('/api/supplies/decide', { ids, act, qty: qtys(ids) });
+  if (j.ok) location.reload();
+}
+function decideGroup(m) {
+  const ids = groups[m].map(r => r.id).filter(i => { const c = document.querySelector(`input[data-id="${i}"]`); return !c || c.checked; });
+  if (!ids.length) { toast('체크한 요청이 없어요.'); return; }
+  decide(ids, 'ok');
+}
+function openAll(m) {
+  const urls = groups[m].filter(r => r.links.length).map(r => r.links[0].url);
+  let blocked = false;
+  urls.forEach(u => { const w = window.open(u, '_blank', 'noopener'); if (!w) blocked = true; });
+  if (blocked && urls.length > 1) toast('브라우저가 창 여러 개를 막았어요. 주소창 오른쪽의 팝업 차단 아이콘 → "항상 허용" 후 다시 눌러 주세요.');
+}
+async function arrived(rid, sid) {
+  const el = document.querySelector(`[data-q="${rid}"]`);
+  const q = parseFloat(String(el ? el.value : '').replace(/,/g, ''));
+  if (!q || q <= 0) { toast('수량을 적어주세요.'); return; }
+  const j = await post(`/api/supplies/${sid}/adjust`, { qty: q, kind: 'in', who: savedStaff() });
+  if (j.ok) { toast('재고에 더했어요. 구매 완료로 옮겼어요.'); setTimeout(() => location.reload(), 800); }
+}
+render();
+</script>
+{% endblock %}

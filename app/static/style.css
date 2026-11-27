@@ -242,3 +242,53 @@ tr.done td{background:#F1F8F4}
 @media (max-width:640px){.tour{left:10px;right:10px;bottom:10px;width:auto;max-height:70vh}.tour.mini{left:auto}}
 @media print{.tour{display:none}}
 .tour-addr{display:flex;gap:6px;align-items:center;margin-top:6px}.tour-addr code{flex:1;min-width:0;background:var(--gl);color:var(--g2);border-radius:8px;padding:6px 8px;font-size:13px;font-weight:700;overflow-wrap:anywhere}
+
+/* 비품 */
+.sp-cnt{background:var(--amb);color:#fff;border-radius:999px;padding:0 8px;font-size:12px;font-weight:700;line-height:20px}
+.sp-cnt.ok{background:var(--g)}
+.sp-buy{background:#FFF8EC;border:2px solid #E8B062;border-radius:14px;padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.sp-brow{display:grid;grid-template-columns:minmax(0,1.3fr) 170px minmax(0,1.4fr) 190px;gap:12px;align-items:center;background:#fff;border-radius:10px;padding:10px 14px}
+.sp-send{background:var(--amb);border-color:var(--amb);color:#fff;font-weight:700}
+.sp-send:disabled{opacity:.45;cursor:default}
+.sp-q{width:62px;text-align:right;font-weight:700;font-size:15px}
+.sp-link{font-size:13px;font-weight:700;border:1px solid var(--bd);border-radius:999px;padding:5px 11px;text-decoration:none;background:#fff;white-space:nowrap}
+.sp-st{font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap}
+.sp-st.wait{background:var(--ambl);color:var(--amb)}.sp-st.ok{background:var(--gl);color:var(--g)}
+.sp-lowchip{border-color:#E8B062;background:#FFF8EC;color:var(--amb);font-weight:700}
+.sp-lowchip.on{background:var(--amb);border-color:var(--amb);color:#fff}
+.sp-dash{border-style:dashed !important;color:var(--g);font-weight:700}
+.sp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.sp-card{padding:16px;display:flex;flex-direction:column;gap:10px}
+.sp-card.low{border-color:#E8B062}
+.sp-info{min-height:34px;padding:4px 10px;font-size:13px}
+.sp-bar{height:6px;background:var(--line2);border-radius:9px;overflow:hidden}.sp-bar span{display:block;height:100%}
+.sp-in{border-color:var(--g);color:var(--g);font-weight:700}
+.sp-lrow{display:grid;grid-template-columns:100px minmax(0,1fr) 150px 120px minmax(0,1fr) 90px;gap:10px;align-items:center;padding:7px 18px;border-top:1px solid var(--line2);font-size:14px}
+.sp-undo{min-height:34px;padding:3px 10px;font-size:13px}
+.sp-ed{width:min(720px,100%);display:flex;flex-direction:column}
+.sp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px}
+.sp-form label{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:700}
+.sp-form label>span{font-weight:400}
+.sp-form .full{grid-column:1/-1}
+.sp-mall{width:64px;font-size:13px;font-weight:700;color:var(--g);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}
+.sp-ghd{padding:12px 18px;background:#F8FAF9;border-bottom:1px solid var(--line2);flex-wrap:wrap}
+.sp-arow{display:grid;grid-template-columns:28px minmax(0,1.5fr) 140px 120px 100px 110px 190px;gap:12px;align-items:center;padding:10px 18px;border-top:1px solid var(--line2)}
+.sp-arow .r{text-align:right}
+.sp-ath{font-size:13px;color:var(--mut);border-top:0;padding-top:8px;padding-bottom:4px}
+.sp-flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;background:var(--gl);border:0;font-size:14px}
+.sp-flow b{color:var(--g)}.sp-flow span{color:var(--ink2)}
+@media (max-width:640px){
+  .sp-brow{grid-template-columns:1fr auto;gap:6px 10px}
+  .sp-brow>:nth-child(3){grid-column:1/-1}
+  .sp-grid{grid-template-columns:1fr}
+  .sp-lrow{grid-template-columns:80px 1fr auto;font-size:13px}
+  .sp-lrow>:nth-child(4),.sp-lrow>:nth-child(5){display:none}
+  .sp-form{grid-template-columns:1fr}
+  .sp-arow{grid-template-columns:24px 1fr auto;gap:6px 10px}
+  .sp-arow>:nth-child(3),.sp-arow>:nth-child(5),.sp-arow>:nth-child(6){grid-column:2/-1;font-size:13px}
+  .sp-arow>:last-child{grid-column:1/-1;justify-content:flex-start}
+  .sp-ath{display:none}
+  .sp-flow{grid-template-columns:1fr 1fr}
+}
+.sheet-bg[hidden]{display:none}
+.sp-arow>:nth-child(4){white-space:nowrap}

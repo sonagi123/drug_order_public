@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}비품{% endblock %}
+{% block body %}
+<div class="row between" style="align-items:flex-end;gap:12px">
+  <div>
+    <h1>비품 관리</h1>
+    <p class="sub">간식·사무용품·위생용품처럼 약이 아닌 물건의 재고. 쓴 양·들어온 양은 숫자로 적고, 살 것은 수량을 적어 <b>결재</b>로 올려요.</p>
+  </div>
+  <div class="row" style="gap:8px">
+    <a class="btn" href="{{ url_for('main.supplies_approve') }}" style="font-weight:700;color:var(--g);border-color:var(--g)">결재함
+      {% if data.wait %}<span class="sp-cnt">{{ data.wait }}</span>{% endif %}{% if data.okn %}<span class="sp-cnt ok">살 것 {{ data.okn }}</span>{% endif %}</a>
+    <button class="primary" onclick="openEd()">+ 비품 추가</button>
+  </div>
+</div>
+
+<section id="buy" class="sp-buy" hidden></section>
+
+<div class="row" style="gap:8px;flex-wrap:wrap" id="chips"></div>
+<div id="grid" class="sp-grid"></div>
+
+<section class="card" style="overflow:hidden">
+  <div class="row between pad" style="padding:12px 18px"><h2>최근 기록</h2><span class="muted small">잘못 누른 [썼어요]·[들어왔어요]는 오른쪽 [되돌리기]</span></div>
+  <div id="log"></div>
+</section>
+
+<div id="ed" class="sheet-bg" hidden onclick="if(event.target===this)closeEd()">
+  <form class="card sp-ed" onsubmit="saveEd(event)">
+    <div class="row between pad" style="border-bottom:1px solid var(--line)"><h2 id="edTitle" style="font-size:18px">비품 정보</h2>
+      <button type="button" onclick="closeEd()" aria-label="닫기" style="border:0">✕</button></div>
+    <div class="pad sp-form">
+      <label class="full">이름<input name="name" required autocomplete="off"></label>
+      <label>분류<select name="cat" onchange="if(this.value==='__new')newCatIn(this)"></select></label>
+      <label>세는 단위<input name="unit" placeholder="개 · 팩 · 박스 · 줄 · 권" list="units"><datalist id="units"><option>개</option><option>팩</option><option>박스</option><option>줄</option><option>권</option><option>롤</option><option>자루</option><option>병</option><option>봉지</option></datalist></label>
+      <label>지금 재고<input name="qty" inputmode="decimal"></label>
+      <label>이만큼 남으면 사기<input name="min" inputmode="decimal"><span class="muted small">이 아래로 내려가면 "살 것"에 올라와요 (0이면 안 올라옴)</span></label>
+      <label>단가 (대략, 1단위)<input name="price" inputmode="decimal" placeholder="원"></label>
+      <label>주로 사는 곳<select name="mall"></select><span class="muted small">결재함에서 이 곳끼리 묶어요</span></label>
+      <div class="full" style="display:flex;flex-direction:column;gap:8px">
+        <b style="font-size:14px">구매 링크</b>
+        <div id="links" style="display:flex;flex-direction:column;gap:8px"></div>
+        <button type="button" class="sp-dash" onclick="addLink('')">+ 링크 추가</button>
+        <span class="muted small">주소를 붙여 넣으면 쿠팡·네이버·11번가·G마켓·컬리 등 이름이 저절로 붙어요</span>
+      </div>
+      <label class="full">메모<textarea name="memo" rows="2" placeholder="예: 로켓배송 · 20줄 묶음으로 / 가나약품에 같이 주문"></textarea></label>
+    </div>
+    <div class="row between pad" style="border-top:1px solid var(--line);background:#F8FAF9">
+      <button type="button" class="danger" id="edDel" onclick="delEd()">비품 지우기</button>
+      <div class="row" style="gap:8px"><button type="button" onclick="closeEd()">취소</button><button class="primary">저장</button></div>
+    </div>
+  </form>
+</div>
+
+<script>
+const D = {{ data|tojson }};
+const S = { cat: '', q: '', cart: {} };
+try { S.cart = JSON.parse(localStorage.getItem('supplyCart') || '{}'); } catch (e) {}
+const saveCart = () => { try { localStorage.setItem('supplyCart', JSON.stringify(S.cart)); } catch (e) {} };
+const nowStr = () => { const d = new Date(), p = x => String(x).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+const n = v => { const x = parseFloat(String(v ?? '').replace(/,/g, '')); return isNaN(x) ? null : x; };
+const mallOf = u => { try { const h = new URL(u).hostname.toLowerCase();
+  for (const [k, m] of [['coupang','쿠팡'],['naver','네이버'],['11st','11번가'],['gmarket','G마켓'],['auction','옥션'],['ssg','SSG'],['kurly','컬리'],['lotteon','롯데온'],['tmon','티몬'],['wemakeprice','위메프'],['danawa','다나와'],['aliexpress','알리']]) if (h.includes(k)) return m;
+  return h.replace(/^(www|m)\./, ''); } catch (e) { return ''; } };
+const linkHtml = r => r.links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" class="sp-link">${esc(l.mall || '링크')} ↗</a>`).join('');
+
+function render() {
+  const low = D.rows.filter(r => r.low);
+  // 살 것
+  const buy = document.getElementById('buy');
+  buy.hidden = !low.length;
+  const inCart = low.filter(r => S.cart[r.id] && !r.req).length;
+  buy.innerHTML = `<div class="row between"><b style="font-size:17px;color:var(--amb)">살 것 ${low.length}개 · 살 수량을 적고 결재에 담아요</b>
+      <button class="sp-send" onclick="sendReq()" ${inCart ? '' : 'disabled'}>담은 ${inCart}개 결재 올리기</button></div>` +
+    low.map(r => `<div class="sp-brow">
+      <div><b>${esc(r.name)}</b> <span class="muted small">· ${esc(r.cat || '분류 없음')}</span></div>
+      <span style="color:var(--red);font-weight:700">${fmt(r.qty)}${esc(r.unit)} 남음 <span class="muted small" style="font-weight:400">/ ${fmt(r.min)}${esc(r.unit)}이면 사기</span></span>
+      <div class="row" style="gap:6px">${linkHtml(r) || `<span class="muted small">링크 없음 · <a href="#" onclick="openEd(${r.id});return false">링크 넣기</a></span>`}${r.price ? `<span class="muted small">단가 ${won(r.price)}</span>` : ''}</div>
+      ${r.req ? `<span class="sp-st ${r.req.status}">${r.req.status === 'wait' ? '결재 대기' : '승인됨 · 살 것'} ${fmt(r.req.qty)}${esc(r.unit)}</span>`
+        : `<div class="row" style="gap:6px;flex-wrap:nowrap"><input class="sp-q" inputmode="decimal" aria-label="${esc(r.name)} 살 수량" value="${esc(S.cart[r.id] || '')}" placeholder="수량"
+            oninput="S.cart[${r.id}]=this.value;if(!n(this.value))delete S.cart[${r.id}];saveCart();renderBuyBtn()"><span class="small">${esc(r.unit)}</span>
+            <span class="muted small">${S.cart[r.id] ? '담음' : ''}</span></div>`}
+    </div>`).join('');
+  // 분류 칩
+  const cnt = c => D.rows.filter(r => (r.cat || '') === c).length;
+  const cats = [...D.cats, ...new Set(D.rows.map(r => r.cat).filter(c => c && !D.cats.includes(c)))];
+  document.getElementById('chips').innerHTML =
+    `<button class="chip ${S.cat === '' ? 'on' : ''}" onclick="S.cat='';render()">전체 ${D.rows.length}</button>` +
+    (low.length ? `<button class="chip sp-lowchip ${S.cat === '__low' ? 'on' : ''}" onclick="S.cat='__low';render()">살 것 ${low.length}</button>` : '') +
+    cats.map(c => `<button class="chip ${S.cat === c ? 'on' : ''}" onclick="S.cat='${esc(c).replace(/'/g, "\\'")}';render()">${esc(c)} ${cnt(c)}</button>`).join('') +
+    `<button class="chip sp-dash" onclick="addCat()">+ 분류 추가</button><button class="chip" onclick="manageCats()">분류 관리</button>
+     <span class="grow"></span><input id="q" placeholder="이름으로 찾기" value="${esc(S.q)}" oninput="S.q=this.value;renderGrid()" style="width:200px" aria-label="비품 검색">`;
+  renderGrid();
+  // 기록
+  document.getElementById('log').innerHTML = D.log.length ? D.log.map(l => `<div class="sp-lrow">
+      <span class="muted">${l.at.slice(5, 16).replace('-', '/')}</span><span>${esc(l.name)}</span>
+      <span style="color:${l.delta < 0 ? 'var(--red)' : 'var(--g)'}">${l.kind === 'use' ? '썼어요 ' : l.kind === 'in' ? '들어옴 ' : '재고 '}${l.delta > 0 ? '+' : ''}${fmt(l.delta)}${esc(l.unit)}</span>
+      <span>${fmt(l.qty_after)}${esc(l.unit)} 남음</span><span class="muted small">${esc(l.note || '')}</span>
+      ${l.kind === 'use' || l.kind === 'in' ? `<button class="sp-undo" onclick="undo(${l.id})">되돌리기</button>` : '<span></span>'}</div>`).join('')
+    : '<div class="pad muted">아직 기록이 없어요.</div>';
+}
+function renderBuyBtn() {
+  const k = D.rows.filter(r => r.low && !r.req && S.cart[r.id]).length;
+  const b = document.querySelector('.sp-send'); if (b) { b.textContent = `담은 ${k}개 결재 올리기`; b.disabled = !k; }
+}
+function renderGrid() {
+  const q = S.q.trim().toLowerCase();
+  const rows = D.rows.filter(r => (S.cat === '' || (S.cat === '__low' ? r.low : (r.cat || '') === S.cat)) && (!q || r.name.toLowerCase().includes(q)));
+  document.getElementById('grid').innerHTML = rows.length ? rows.map(r => {
+    const pct = r.min > 0 ? Math.min(100, r.qty / (r.min * 3) * 100) : 100;
+    return `<article class="card sp-card ${r.low ? 'low' : ''}" id="s_${r.id}">
+      <div class="row between" style="align-items:flex-start;flex-wrap:nowrap"><div style="min-width:0"><b style="font-size:16px">${esc(r.name)}</b><div class="muted small">${esc(r.cat || '분류 없음')}</div></div>
+        <button class="sp-info" onclick="openEd(${r.id})">정보</button></div>
+      <div class="row" style="align-items:baseline;gap:6px"><b style="font-size:30px">${fmt(r.qty)}</b><span>${esc(r.unit)}</span>
+        <span class="muted small" style="margin-left:auto">${r.min > 0 ? fmt(r.min) + esc(r.unit) + '이면 사기' : ''}</span></div>
+      <div class="sp-bar"><span style="width:${pct}%;background:${r.low ? 'var(--red)' : pct < 50 ? '#C98A3A' : 'var(--g)'}"></span></div>
+      <div class="row" style="gap:6px;flex-wrap:nowrap"><input class="sp-q" inputmode="decimal" value="1" aria-label="${esc(r.name)} 수량" id="q_${r.id}"><span class="muted small">${esc(r.unit)}</span>
+        <button class="grow" onclick="adj(${r.id},'use')">썼어요</button><button class="grow sp-in" onclick="adj(${r.id},'in')">들어왔어요</button></div>
+      <div class="row small muted" style="gap:8px">${linkHtml(r)}${r.req ? `<span class="sp-st ${r.req.status}">${r.req.status === 'wait' ? '결재 대기' : '승인됨'} ${fmt(r.req.qty)}${esc(r.unit)}</span>` : ''}${r.lastIn ? `<span>최근 들어옴 ${r.lastIn.slice(5).replace('-', '/')}</span>` : ''}</div>
+      ${r.memo ? `<div class="small muted" style="white-space:pre-line">${esc(r.memo)}</div>` : ''}
+    </article>`; }).join('')
+    : `<div class="card pad muted">${D.rows.length ? '조건에 맞는 비품이 없어요.' : '아직 비품이 없어요. [+ 비품 추가]로 시작하세요.'}</div>`;
+}
+
+async function adj(id, kind) {
+  const el = document.getElementById('q_' + id), q = n(el.value);
+  if (!q || q <= 0) { toast('수량을 적어주세요.'); el.focus(); return; }
+  const j = await post(`/api/supplies/${id}/adjust`, { qty: q, kind });
+  if (!j.ok) return;
+  const r = D.rows.find(x => x.id === id);
+  const before = r.qty;
+  r.qty = j.qty; r.low = r.min > 0 && r.qty <= r.min;
+  D.log.unshift({ id: j.log, at: nowStr(), name: r.name, unit: r.unit, kind, delta: r.qty - before, qty_after: r.qty, note: '' });
+  render();
+  undoToast(`${r.name} ${kind === 'use' ? fmt(q) + r.unit + ' 썼어요' : fmt(q) + r.unit + ' 들어왔어요'} → ${fmt(j.qty)}${r.unit} 남음`, j.log);
+}
+function undoToast(msg, lid) {
+  const el = document.getElementById('toast');
+  el.innerHTML = `${esc(msg)} · <a href="#" style="color:#FCD34D;font-weight:700" onclick="undo(${lid});return false">되돌리기</a>`;
+  el.style.display = 'block'; clearTimeout(window.__t);
+  window.__t = setTimeout(() => el.style.display = 'none', 4000);
+}
+async function undo(lid) {
+  clearTimeout(window.__t);
+  const j = await post('/api/supplies/undo/' + lid);
+  if (j.ok) location.reload();
+}
+async function sendReq() {
+  const items = D.rows.filter(r => r.low && !r.req && n(S.cart[r.id])).map(r => ({ id: r.id, qty: n(S.cart[r.id]) }));
+  if (!items.length) return;
+  const j = await post('/api/supplies/request', { items, who: savedStaff() });
+  if (!j.ok) return;
+  S.cart = {}; saveCart();
+  toast(`${j.n}개를 결재함에 올렸어요.`); setTimeout(() => location.reload(), 900);
+}
+
+// 분류
+async function addCat(sel) {
+  const name = (prompt('새 분류 이름') || '').trim();
+  if (!name) { if (sel) sel.value = ''; return null; }
+  const j = await post('/api/supplies/cat', { act: 'add', name });
+  if (!j.ok) { if (sel) sel.value = ''; return null; }
+  D.cats = j.cats; if (!sel) render(); return name;
+}
+async function manageCats() {
+  const list = D.cats.map((c, i) => `${i + 1}. ${c}`).join('\n');
+  const pick = prompt(`바꾸거나 지울 분류 번호를 적어주세요.\n\n${list}`);
+  const c = D.cats[(parseInt(pick) || 0) - 1]; if (!c) return;
+  const nw = prompt(`"${c}"의 새 이름 (비우면 이 분류를 지워요. 그 분류의 비품은 "분류 없음"이 돼요)`, c);
+  if (nw === null) return;
+  const j = nw.trim() ? await post('/api/supplies/cat', { act: 'rename', name: c, new: nw.trim() })
+    : (confirm(`"${c}" 분류를 지울까요?`) ? await post('/api/supplies/cat', { act: 'delete', name: c }) : null);
+  if (j && j.ok) location.reload();
+}
+
+// 정보 창
+const F = () => document.querySelector('#ed form');
+function catOpts(cur) {
+  const cs = [...new Set([...D.cats, ...(cur && !D.cats.includes(cur) ? [cur] : [])])];
+  return `<option value="">분류 없음</option>` + cs.map(c => `<option ${c === cur ? 'selected' : ''}>${esc(c)}</option>`).join('') + `<option value="__new">+ 새 분류 만들기…</option>`;
+}
+async function newCatIn(sel) {
+  const name = await addCat(sel); if (!name) return;
+  sel.innerHTML = catOpts(name);
+}
+function addLink(u) {
+  const box = document.createElement('div'); box.className = 'row'; box.style.cssText = 'gap:8px;flex-wrap:nowrap';
+  box.innerHTML = `<span class="sp-mall">${esc(mallOf(u) || '링크')}</span><input class="grow" type="url" placeholder="https://www.coupang.com/vp/products/…" value="${esc(u)}" aria-label="구매 링크"
+      oninput="this.previousElementSibling.textContent=mallOf(this.value)||'링크'">
+    <button type="button" aria-label="링크 지우기" onclick="this.parentElement.remove()" style="min-width:44px">✕</button>`;
+  document.getElementById('links').appendChild(box);
+}
+function openEd(id) {
+  const r = D.rows.find(x => x.id === id) || { name: '', cat: S.cat && S.cat !== '__low' ? S.cat : '', unit: '개', qty: 0, min: 0, price: null, mallSet: '', links: [], memo: '' };
+  const f = F(); f.dataset.id = id || '';
+  document.getElementById('edTitle').textContent = id ? '비품 정보 · ' + r.name : '비품 추가';
+  document.getElementById('edDel').hidden = !id;
+  f.name.value = r.name; f.cat.innerHTML = catOpts(r.cat); f.unit.value = r.unit; f.qty.value = r.qty ?? 0; f.min.value = r.min || '';
+  f.price.value = r.price ?? ''; f.memo.value = r.memo;
+  f.mall.innerHTML = `<option value="">첫 번째 링크로 자동</option>` + D.malls.map(m => `<option ${m === r.mallSet ? 'selected' : ''}>${esc(m)}</option>`).join('');
+  document.getElementById('links').innerHTML = ''; (r.links.length ? r.links.map(l => l.url) : ['']).forEach(addLink);
+  document.getElementById('ed').hidden = false; f.name.focus();
+}
+function closeEd() { document.getElementById('ed').hidden = true; }
+async function saveEd(e) {
+  e.preventDefault();
+  const f = F();
+  const body = { id: f.dataset.id ? +f.dataset.id : null, name: f.name.value, cat: f.cat.value === '__new' ? '' : f.cat.value, unit: f.unit.value,
+    qty: f.qty.value, min: f.min.value, price: f.price.value, mall: f.mall.value, memo: f.memo.value,
+    links: [...document.querySelectorAll('#links input')].map(i => i.value).filter(Boolean), who: savedStaff() };
+  const j = await post('/api/supplies/save', body);
+  if (j.ok) location.reload();
+}
+async function delEd() {
+  const f = F(); const r = D.rows.find(x => x.id === +f.dataset.id);
+  if (!confirm(`"${r.name}"을(를) 지울까요?\n진행 중인 결재 요청도 반려로 바뀌어요.`)) return;
+  const j = await post(`/api/supplies/${r.id}/delete`);
+  if (j.ok) location.reload();
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.getElementById('ed').hidden) closeEd(); });
+render();
+</script>
+{% endblock %}

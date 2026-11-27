@@ -113,6 +113,23 @@ CREATE TABLE IF NOT EXISTS psy_usage (
   code TEXT NOT NULL, date TEXT NOT NULL, qty REAL NOT NULL, staff TEXT, created_at TEXT,
   PRIMARY KEY (code, date)
 );
+-- 비품 (간식·사무용품·위생용품 등 약이 아닌 물건)
+CREATE TABLE IF NOT EXISTS supply_cats (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, sort INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS supplies (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, cat TEXT, unit TEXT DEFAULT '개',
+  qty REAL DEFAULT 0, min_qty REAL DEFAULT 0, price REAL, mall TEXT, links TEXT DEFAULT '[]',
+  memo TEXT, active INTEGER DEFAULT 1, created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS supply_log (
+  id INTEGER PRIMARY KEY, supply_id INTEGER, at TEXT, kind TEXT, delta REAL, qty_after REAL,
+  who TEXT, note TEXT, undone INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS supply_reqs (
+  id INTEGER PRIMARY KEY, supply_id INTEGER, qty REAL NOT NULL, status TEXT DEFAULT 'wait',
+  who TEXT, price REAL, created_at TEXT, decided_at TEXT, done_at TEXT
+);
 """
 
 DEFAULTS = {
@@ -174,6 +191,9 @@ def init():
     if not conn.execute("SELECT 1 FROM settings WHERE key='tour'").fetchone():
         used = conn.execute("SELECT 1 FROM drugs LIMIT 1").fetchone()
         conn.execute("INSERT INTO settings(key, value) VALUES ('tour', ?)", ("done" if used else "open",))
+    if not conn.execute("SELECT 1 FROM supply_cats").fetchone():
+        for i, n in enumerate(("간식·탕비실", "사무용품", "위생·청소", "진료 소모품")):
+            conn.execute("INSERT INTO supply_cats(name, sort) VALUES (?, ?)", (n, i))
     for k, v in DEFAULTS.items():
         conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
     # 2026-11-21: 처방발생 통계가 등록수가로 잘못 읽혀 비워진 약 목록(catalog) 이름 복구

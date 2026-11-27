@@ -18,6 +18,7 @@ def create_app():
     app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
 
     from .views import bp
+    from . import supplies  # noqa: F401  비품 화면 (같은 bp에 등록)
     app.register_blueprint(bp)
 
     @app.teardown_appcontext
