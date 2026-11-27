@@ -29,7 +29,7 @@
       <button type="button" onclick="closeEd()" aria-label="닫기" style="border:0">✕</button></div>
     <div class="pad sp-form">
       <label class="full">이름<input name="name" required autocomplete="off"></label>
-      <label>분류<select name="cat" onchange="if(this.value==='__new')newCatIn(this)"></select></label>
+      <label>분류<select name="cat" onfocus="this.dataset.prev=this.value" onchange="if(this.value==='__new')newCatIn(this);else this.dataset.prev=this.value"></select></label>
       <label>세는 단위<input name="unit" placeholder="개 · 팩 · 박스 · 줄 · 권" list="units"><datalist id="units"><option>개</option><option>팩</option><option>박스</option><option>줄</option><option>권</option><option>롤</option><option>자루</option><option>병</option><option>봉지</option></datalist></label>
       <label>지금 재고<input name="qty" inputmode="decimal"></label>
       <label>이만큼 남으면 사기<input name="min" inputmode="decimal"><span class="muted small">이 아래로 내려가면 "살 것"에 올라와요 (0이면 안 올라옴)</span></label>
@@ -48,6 +48,22 @@
       <div class="row" style="gap:8px"><button type="button" onclick="closeEd()">취소</button><button class="primary">저장</button></div>
     </div>
   </form>
+</div>
+
+<div id="catBox" class="sheet-bg" hidden onclick="if(event.target===this)closeCats()">
+  <div class="card sp-cm">
+    <div class="row between pad" style="border-bottom:1px solid var(--line)"><h2 style="font-size:18px">분류 관리</h2>
+      <button type="button" onclick="closeCats()" aria-label="닫기" style="border:0">✕</button></div>
+    <div class="pad" style="display:flex;flex-direction:column;gap:6px">
+      <p class="muted small" style="margin:0 0 4px">이름을 고치면 바로 저장돼요. 화살표로 순서를 바꾸면 위쪽 칩 순서도 바뀌어요. 지운 분류의 비품은 "분류 없음"이 돼요.</p>
+      <div id="catList" style="display:flex;flex-direction:column;gap:6px"></div>
+      <form class="row sp-cm-add" onsubmit="event.preventDefault();addCatIn()">
+        <input id="catNew" placeholder="새 분류 이름 (예: 환자용품)" aria-label="새 분류 이름" class="grow">
+        <button class="primary">추가</button>
+      </form>
+    </div>
+    <div class="row pad" style="justify-content:flex-end;border-top:1px solid var(--line);background:#F8FAF9"><button class="primary" onclick="closeCats()">완료</button></div>
+  </div>
 </div>
 
 <script>
@@ -86,7 +102,7 @@ function render() {
     `<button class="chip ${S.cat === '' ? 'on' : ''}" onclick="S.cat='';render()">전체 ${D.rows.length}</button>` +
     (low.length ? `<button class="chip sp-lowchip ${S.cat === '__low' ? 'on' : ''}" onclick="S.cat='__low';render()">살 것 ${low.length}</button>` : '') +
     cats.map(c => `<button class="chip ${S.cat === c ? 'on' : ''}" onclick="S.cat='${esc(c).replace(/'/g, "\\'")}';render()">${esc(c)} ${cnt(c)}</button>`).join('') +
-    `<button class="chip sp-dash" onclick="addCat()">+ 분류 추가</button><button class="chip" onclick="manageCats()">분류 관리</button>
+    `<button class="chip sp-dash" onclick="manageCats(true)">+ 분류 추가</button><button class="chip" onclick="manageCats()">분류 관리</button>
      <span class="grow"></span><input id="q" placeholder="이름으로 찾기" value="${esc(S.q)}" oninput="S.q=this.value;renderGrid()" style="width:200px" aria-label="비품 검색">`;
   renderGrid();
   // 기록
@@ -153,23 +169,56 @@ async function sendReq() {
 }
 
 // 분류
-async function addCat(sel) {
+async function addCat(sel) {   // 정보 창의 [+ 새 분류 만들기]
   const name = (prompt('새 분류 이름') || '').trim();
   if (!name) { if (sel) sel.value = ''; return null; }
   const j = await post('/api/supplies/cat', { act: 'add', name });
   if (!j.ok) { if (sel) sel.value = ''; return null; }
-  D.cats = j.cats; if (!sel) render(); return name;
+  D.cats = j.cats; S.catsChanged = true; return name;
 }
-async function manageCats() {
-  const list = D.cats.map((c, i) => `${i + 1}. ${c}`).join('\n');
-  const pick = prompt(`바꾸거나 지울 분류 번호를 적어주세요.\n\n${list}`);
-  const c = D.cats[(parseInt(pick) || 0) - 1]; if (!c) return;
-  const nw = prompt(`"${c}"의 새 이름 (비우면 이 분류를 지워요. 그 분류의 비품은 "분류 없음"이 돼요)`, c);
-  if (nw === null) return;
-  const j = nw.trim() ? await post('/api/supplies/cat', { act: 'rename', name: c, new: nw.trim() })
-    : (confirm(`"${c}" 분류를 지울까요?`) ? await post('/api/supplies/cat', { act: 'delete', name: c }) : null);
-  if (j && j.ok) location.reload();
+const catCount = c => D.rows.filter(r => (r.cat || '') === c).length;
+function manageCats(focusNew) {
+  document.getElementById('catBox').hidden = false;
+  drawCats();
+  if (focusNew) document.getElementById('catNew').focus();
 }
+function closeCats() { document.getElementById('catBox').hidden = true; if (S.catsChanged) location.reload(); }
+function drawCats() {
+  document.getElementById('catList').innerHTML = D.cats.length ? D.cats.map((c, i) => `<div class="sp-cm-row">
+      <span class="sp-cm-ord"><button type="button" aria-label="위로" onclick="moveCat(${i},-1)" ${i ? '' : 'disabled'}>▲</button><button type="button" aria-label="아래로" onclick="moveCat(${i},1)" ${i < D.cats.length - 1 ? '' : 'disabled'}>▼</button></span>
+      <input value="${esc(c)}" aria-label="${esc(c)} 분류 이름" data-old="${esc(c)}" onchange="renameCat(this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}">
+      <span class="muted small sp-cm-n">비품 ${catCount(c)}개</span>
+      <button type="button" class="danger" onclick="delCat(${i})">지우기</button></div>`).join('')
+    : '<div class="muted small">분류가 없어요. 아래에서 추가하세요.</div>';
+}
+async function catApi(body) {
+  const j = await post('/api/supplies/cat', body);
+  if (j.ok) { D.cats = j.cats; S.catsChanged = true; drawCats(); }
+  return j.ok;
+}
+async function addCatIn() {
+  const el = document.getElementById('catNew'), name = el.value.trim();
+  if (!name) { el.focus(); return; }
+  if (await catApi({ act: 'add', name })) { el.value = ''; el.focus(); toast(`"${name}" 분류를 만들었어요.`); }
+}
+async function renameCat(el) {
+  const old = el.dataset.old, nw = el.value.trim();
+  if (!nw || nw === old) { el.value = old; return; }
+  if (await catApi({ act: 'rename', name: old, new: nw })) {
+    D.rows.forEach(r => { if (r.cat === old) r.cat = nw; }); drawCats(); toast('이름을 바꿨어요.');
+  } else el.value = old;
+}
+async function delCat(i) {
+  const c = D.cats[i], n = catCount(c);
+  if (!confirm(`"${c}" 분류를 지울까요?` + (n ? `\n이 분류의 비품 ${n}개는 "분류 없음"이 돼요. 비품은 지워지지 않아요.` : ''))) return;
+  if (await catApi({ act: 'delete', name: c })) D.rows.forEach(r => { if (r.cat === c) r.cat = ''; }), drawCats();
+}
+async function moveCat(i, d) {
+  const a = [...D.cats], j = i + d; if (j < 0 || j >= a.length) return;
+  [a[i], a[j]] = [a[j], a[i]];
+  await catApi({ act: 'order', names: a });
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.getElementById('catBox').hidden) closeCats(); });
 
 // 정보 창
 const F = () => document.querySelector('#ed form');
@@ -177,9 +226,21 @@ function catOpts(cur) {
   const cs = [...new Set([...D.cats, ...(cur && !D.cats.includes(cur) ? [cur] : [])])];
   return `<option value="">분류 없음</option>` + cs.map(c => `<option ${c === cur ? 'selected' : ''}>${esc(c)}</option>`).join('') + `<option value="__new">+ 새 분류 만들기…</option>`;
 }
-async function newCatIn(sel) {
-  const name = await addCat(sel); if (!name) return;
-  sel.innerHTML = catOpts(name);
+function newCatIn(sel) {   // 정보 창: 목록 대신 그 자리에 새 분류 입력칸
+  sel.hidden = true;
+  const box = document.createElement('span'); box.className = 'row'; box.style.cssText = 'gap:6px;flex-wrap:nowrap';
+  box.innerHTML = `<input placeholder="새 분류 이름" aria-label="새 분류 이름" style="font-weight:400;flex:1;min-width:0"><button type="button" class="primary" style="padding:9px 12px">추가</button><button type="button" style="padding:9px 10px">취소</button>`;
+  sel.after(box);
+  const [inp, add, cancel] = box.children;
+  const done = name => { box.remove(); sel.hidden = false; sel.innerHTML = catOpts(name || ''); };
+  add.onclick = async () => {
+    const name = inp.value.trim(); if (!name) { inp.focus(); return; }
+    const j = await post('/api/supplies/cat', { act: 'add', name });
+    if (j.ok) { D.cats = j.cats; S.catsChanged = true; done(name); }
+  };
+  cancel.onclick = () => done(sel.dataset.prev || '');
+  inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add.click(); } if (e.key === 'Escape') { e.stopPropagation(); cancel.click(); } };
+  inp.focus();
 }
 function addLink(u) {
   const box = document.createElement('div'); box.className = 'row'; box.style.cssText = 'gap:8px;flex-wrap:nowrap';

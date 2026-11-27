@@ -188,6 +188,9 @@ def api_supply_cat():
             return err("이미 있는 분류예요.")
         db.run("UPDATE supply_cats SET name=? WHERE name=?", (new, name))
         db.run("UPDATE supplies SET cat=? WHERE cat=?", (new, name))
+    elif act == "order":
+        for i, nm in enumerate(j.get("names") or []):
+            db.run("UPDATE supply_cats SET sort=? WHERE name=?", (i, nm))
     elif act == "delete":
         db.run("DELETE FROM supply_cats WHERE name=?", (name,))
         db.run("UPDATE supplies SET cat='' WHERE cat=?", (name,))
