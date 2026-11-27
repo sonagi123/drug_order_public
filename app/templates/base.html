@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{% endblock %} · {{ clinic or "" }} 약품관리</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=28">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=29">
 <script src="{{ url_for('static', filename='common.js') }}?v=5"></script>
 </head>
 <body>
 <header class="top"><div class="in">
   <div class="brand">{{ clinic }} 약품관리</div>
   <nav class="menu">
-    {% set menu = [('main.order','주문'),('main.receive','입고 체크'),('main.psy','향정 관리'),('main.drugs','약품 관리'),('main.supplies','비품'),('main.report','리포트'),('main.upload','업로드'),('main.settings','설정'),('main.help_page','도움말')] %}
+    {% set menu = [('main.order','주문'),('main.receive','입고 체크'),('main.psy','향정 관리'),('main.drugs','약품 관리'),('main.supplies','비품'),('main.leave','연차'),('main.report','리포트'),('main.upload','업로드'),('main.settings','설정'),('main.help_page','도움말')] %}
     {% for ep, label in menu %}
       <a href="{{ url_for(ep) }}" class="{{ 'on' if nav == ep or (ep == 'main.receive' and nav in ('main.backorder', 'main.receive_done', 'main.receive_export')) or (ep == 'main.psy' and nav == 'main.psy_review') or (ep == 'main.upload' and nav == 'main.links') or (ep == 'main.order' and nav == 'main.orders_history') or (ep == 'main.supplies' and nav == 'main.supplies_approve') else '' }}">{{ label }}</a>
     {% endfor %}

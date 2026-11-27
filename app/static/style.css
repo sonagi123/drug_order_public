@@ -316,3 +316,22 @@ tr.done td{background:#F1F8F4}
 .sp-fab{display:none}
 @media (max-width:640px){.sp-fab:not([hidden]){display:block;position:fixed;left:12px;right:12px;bottom:12px;z-index:30;background:var(--amb);color:#fff;border:0;font-weight:700;min-height:50px;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,.2)}
   .sp-cart{position:static;max-height:none}}
+
+/* 연차 */
+.lv-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.lv-card{padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.lv-bar{height:8px;background:var(--line2);border-radius:9px;overflow:hidden;display:flex}.lv-bar span{background:var(--g)}.lv-bar span.w{background:#E8B062}
+.lv-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.lv-hd{padding:6px 10px;font-size:13px;color:var(--mut);border-bottom:1px solid var(--line2)}
+.lv-day{min-height:78px;padding:6px;border:0;border-radius:0;justify-content:flex-start;border-bottom:1px solid var(--line2);border-right:1px solid var(--line2);background:#fff;display:flex;flex-direction:column;align-items:stretch;gap:3px;text-align:left;font-size:12px;cursor:pointer}
+.lv-day:hover{background:#F6F9F8}
+.lv-day.pick{background:#E8F0FB;box-shadow:inset 0 0 0 2px #2B5FA8}
+.lv-day.we .lv-n{color:#B4541A}
+.lv-day.today .lv-n{background:var(--g);color:#fff;border-radius:99px;padding:0 6px;align-self:flex-start}
+.lv-n{font-size:13px;color:var(--mut)}
+.lv-chip{border-radius:6px;padding:1px 5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lv-chip.ok{background:var(--gl);color:var(--g)}.lv-chip.wait{background:#FFF4E0;color:var(--amb);cursor:pointer}
+.lv-side{display:flex;flex-direction:column;gap:14px;position:sticky;top:12px}
+.lv-left{background:var(--gl);border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;color:var(--g)}
+.lv-left b{font-size:24px}
+@media (max-width:640px){.lv-day{min-height:58px;font-size:11px}.lv-side{position:static}}

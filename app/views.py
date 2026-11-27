@@ -1240,8 +1240,9 @@ def report():
     ps, pe = request.args.get("ps"), request.args.get("pe")
     if ps and pe and ps <= pe:
         custom = (date.fromisoformat(ps), date.fromisoformat(pe))
+    from . import leave
     return render_template("report.html", m=month, prev=prev, nxt=nxt, r=report_data(month), trend=trend,
-                           billing=billing_data(custom), ps=ps or "", pe=pe or "")
+                           billing=billing_data(custom), ps=ps or "", pe=pe or "", leave=leave.admin_data())
 
 
 @bp.route("/report/lock")

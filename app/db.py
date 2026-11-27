@@ -113,6 +113,11 @@ CREATE TABLE IF NOT EXISTS psy_usage (
   code TEXT NOT NULL, date TEXT NOT NULL, qty REAL NOT NULL, staff TEXT, created_at TEXT,
   PRIMARY KEY (code, date)
 );
+-- 직원 연차: 하루(또는 반나절)마다 한 줄. grp = 한 번에 신청한 묶음
+CREATE TABLE IF NOT EXISTS leaves (
+  id INTEGER PRIMARY KEY, staff_id INTEGER NOT NULL, date TEXT NOT NULL, kind TEXT DEFAULT 'full',
+  days REAL DEFAULT 1, status TEXT DEFAULT 'wait', reason TEXT, grp INTEGER, created_at TEXT, decided_at TEXT
+);
 -- 비품 (간식·사무용품·위생용품 등 약이 아닌 물건)
 CREATE TABLE IF NOT EXISTS supply_cats (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, sort INTEGER DEFAULT 0
@@ -179,6 +184,10 @@ def init():
     cols = {r[1] for r in conn.execute("PRAGMA table_info(drugs)")}
     if "alias_of" not in cols:  # 예전 DB 업그레이드
         conn.execute("ALTER TABLE drugs ADD COLUMN alias_of TEXT")
+    scols = {r[1] for r in conn.execute("PRAGMA table_info(staff)")}
+    for col, typ in (("leave_base", "TEXT"), ("leave_days", "REAL")):  # 연차 기준일, 1년 연차 일수
+        if col not in scols:
+            conn.execute(f"ALTER TABLE staff ADD COLUMN {col} {typ}")
     wcols = {r[1] for r in conn.execute("PRAGMA table_info(wholesalers)")}
     for col, typ in (("billing_day", "INTEGER"), ("discount_rate", "REAL DEFAULT 0"), ("discount_on", "INTEGER DEFAULT 0"), ("biz_no", "TEXT")):
         if col not in wcols:

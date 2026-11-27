@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}연차{% endblock %}
+{% block body %}
+<div>
+  <h1>직원 연차</h1>
+  <p class="sub">직원마다 <b>기준일</b>(입사일)부터 1년마다 정해진 연차가 새로 생겨요(남은 건 넘어가지 않아요). 이름을 고르고 <b>달력에서 쉴 날을 눌러</b> 신청하면, 원장님이 리포트에서 승인해요.</p>
+</div>
+<div id="cards" class="lv-cards"></div>
+<div class="split">
+  <section class="card main" style="overflow:hidden">
+    <div class="row between pad" style="padding:12px 18px;border-bottom:1px solid var(--line)">
+      <a class="btn" href="?m={{ data.prev }}" aria-label="이전 달">‹</a>
+      <h2 id="mtitle"></h2>
+      <a class="btn" href="?m={{ data.next }}" aria-label="다음 달">›</a>
+    </div>
+    <div class="lv-cal" id="cal"></div>
+    <div class="row small muted" style="gap:14px;padding:10px 18px"><span><b style="color:var(--g)">초록</b> 승인됨</span><span><b style="color:var(--amb)">주황</b> 승인 대기 (눌러서 취소)</span><span><b style="color:#2B5FA8">파랑</b> 지금 고른 날</span></div>
+  </section>
+  <aside class="card side pad lv-side">
+    <h2>연차 신청</h2>
+    <div><b class="small">누가</b><div class="row" id="who" style="gap:6px;margin-top:6px"></div></div>
+    <div id="left" class="lv-left" hidden></div>
+    <div><b class="small">종류</b><div class="row" id="kind" style="gap:6px;margin-top:6px"></div></div>
+    <div><b class="small">고른 날</b><div id="picked" class="muted small" style="margin-top:6px">이름을 고른 뒤 달력에서 날짜를 누르세요.</div></div>
+    <label class="small" style="display:flex;flex-direction:column;gap:6px;font-weight:700"><span>사유 <span class="muted" style="font-weight:400">(선택)</span></span><input id="reason" placeholder="예: 가족 행사"></label>
+    <button class="primary big" id="go" onclick="send()" disabled>원장님께 신청하기</button>
+  </aside>
+</div>
+
+<script>
+const D = {{ data|tojson }};
+const KIND = { full: ['연차', 1], am: ['오전 반차', 0.5], pm: ['오후 반차', 0.5] };
+const S = { who: null, kind: 'full', pick: new Set() };
+const md = d => `${+d.slice(5, 7)}/${+d.slice(8)}`;
+const wd = d => '일월화수목금토'[new Date(d + 'T00:00:00').getDay()];
+
+function cards() {
+  document.getElementById('cards').innerHTML = D.staff.map(s => s.start ? `<article class="card lv-card">
+      <div class="row between"><b style="font-size:16px">${esc(s.name)}</b><span class="muted small">기준일 ${s.base}</span></div>
+      <div class="muted small">이번 기간 ${s.start} ~ ${s.end}</div>
+      <div class="row" style="align-items:baseline;gap:6px"><span class="small muted">남은 연차</span><b style="font-size:28px;color:${s.left <= 1 ? 'var(--red)' : 'var(--ink)'}">${fmt(s.left)}</b>일
+        <span class="muted small" style="margin-left:auto">${fmt(s.total)}일 중 ${fmt(s.used)}일 씀${s.wait ? ' · 대기 ' + fmt(s.wait) + '일' : ''}</span></div>
+      <div class="lv-bar"><span style="width:${Math.min(100, s.used / s.total * 100)}%"></span><span class="w" style="width:${Math.min(100, s.wait / s.total * 100)}%"></span></div>
+      ${s.newSoon ? `<div class="small" style="color:var(--g);font-weight:700">${md(s.start)}에 새 연차 ${fmt(s.total)}일이 생겼어요</div>` : ''}
+    </article>` : `<article class="card lv-card"><b>${esc(s.name)}</b><div class="muted small">연차 기준일·일수가 아직 없어요. 원장님이 리포트 → 직원 연차 설정에서 넣어요.</div></article>`).join('')
+    || '<div class="card pad muted">직원이 없어요. 설정 → 직원에서 먼저 추가하세요.</div>';
+}
+function side() {
+  document.getElementById('who').innerHTML = D.staff.filter(s => s.start).map(s => `<button class="chip ${S.who === s.id ? 'on' : ''}" onclick="S.who=${s.id};S.pick.clear();draw()">${esc(s.name)}</button>`).join('') || '<span class="muted small">연차가 설정된 직원이 없어요.</span>';
+  document.getElementById('kind').innerHTML = Object.entries(KIND).map(([k, v]) => `<button class="chip ${S.kind === k ? 'on' : ''}" onclick="S.kind='${k}';draw()">${v[0]}</button>`).join('');
+  const s = D.staff.find(x => x.id === S.who), n = S.pick.size * KIND[S.kind][1];
+  const left = document.getElementById('left');
+  left.hidden = !s;
+  if (s) left.innerHTML = `<span>${esc(s.name)} · 남은 연차<br><span class="muted small">${s.start} ~ ${s.end}</span></span><b>${fmt(s.left)}일</b>`;
+  const days = [...S.pick].sort();
+  document.getElementById('picked').innerHTML = !S.who ? '이름을 고른 뒤 달력에서 날짜를 누르세요.' : !days.length ? '달력에서 쉴 날을 누르세요. 다시 누르면 빠져요.'
+    : `${days.map(d => `${md(d)}(${wd(d)})`).join(', ')}<br><b style="color:var(--ink)">${fmt(n)}일</b> 써요 → 남은 연차 <b style="color:${s.left - n < 0 ? 'var(--red)' : 'var(--ink)'}">${fmt(s.left - n)}일</b>${s.left - n < 0 ? ' (모자라요)' : ''}`;
+  document.getElementById('go').disabled = !S.who || !days.length;
+}
+function cal() {
+  const first = new Date(D.m + '-01T00:00:00'), y = first.getFullYear(), mo = first.getMonth();
+  document.getElementById('mtitle').textContent = `${y}년 ${mo + 1}월`;
+  const last = new Date(y, mo + 1, 0).getDate(), off = (first.getDay() + 6) % 7;  // 월요일 시작
+  const by = {}; D.leaves.forEach(l => (by[l.date] = by[l.date] || []).push(l));
+  let h = '월화수목금토일'.split('').map(d => `<div class="lv-hd">${d}</div>`).join('') + '<div></div>'.repeat(off);
+  for (let d = 1; d <= last; d++) {
+    const ds = `${D.m}-${String(d).padStart(2, '0')}`, dow = (off + d - 1) % 7;
+    const items = (by[ds] || []).map(l => `<span class="lv-chip ${l.status}" ${l.status === 'wait' ? `title="눌러서 취소" onclick="event.stopPropagation();cancel(${l.id},'${esc(l.name)}','${ds}')"` : ''}>${esc(l.name)}${l.kind === 'full' ? '' : ' ' + KIND[l.kind][0].replace(' 반차', '반차')}</span>`).join('');
+    h += `<button class="lv-day ${S.pick.has(ds) ? 'pick' : ''} ${ds === D.today ? 'today' : ''} ${dow >= 5 ? 'we' : ''}" onclick="tog('${ds}')" aria-label="${mo + 1}월 ${d}일" aria-pressed="${S.pick.has(ds)}"><span class="lv-n">${d}</span>${items}</button>`;
+  }
+  document.getElementById('cal').innerHTML = h;
+}
+function tog(ds) {
+  if (!S.who) { toast('먼저 오른쪽에서 이름을 고르세요.'); return; }
+  if (D.leaves.some(l => l.date === ds && l.staff_id === S.who)) { toast('이날은 이미 신청했어요.'); return; }
+  S.pick.has(ds) ? S.pick.delete(ds) : S.pick.add(ds); draw();
+}
+async function cancel(id, name, ds) {
+  if (!confirm(`${name} ${md(ds)} 연차 신청을 취소할까요?`)) return;
+  const j = await post(`/api/leave/${id}/cancel`); if (j.ok) location.reload();
+}
+async function send() {
+  const j = await post('/api/leave/request', { staff: S.who, kind: S.kind, dates: [...S.pick], reason: document.getElementById('reason').value });
+  if (j.ok) { toast(`${j.n}일 신청했어요. 원장님 승인을 기다려요.`); setTimeout(() => location.reload(), 900); }
+}
+function draw() { cal(); side(); }
+cards(); draw();
+</script>
+{% endblock %}
