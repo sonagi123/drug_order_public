@@ -351,3 +351,29 @@ tr.done td{background:#F1F8F4}
 .it-exp input{width:200px;padding:6px 10px;min-height:36px}
 .exp-alert{display:flex;align-items:center;gap:12px;background:#FDECEA;color:#8F1D14;border-radius:12px;padding:12px 16px;text-decoration:none}
 .exp-alert:hover{color:#8F1D14;background:#FBDCD8}
+/* 향정 점검표 인쇄: 화면에선 숨기고, 인쇄할 때는 이것만 */
+#printSheet{display:none}
+@media print{
+  @page{size:A4 portrait;margin:10mm}
+  body.print-psy{background:#fff}
+  body.print-psy>*:not(#printSheet){display:none !important}
+  body.print-psy #printSheet{display:block;font-family:inherit;color:#111;font-size:10pt}
+  #printSheet .ps-head{display:flex;align-items:flex-end;gap:5mm;border-bottom:2px solid #111;padding-bottom:2mm;margin-bottom:3mm}
+  #printSheet .ps-head>div:first-child{flex:1}
+  #printSheet .ps-clinic{font-size:9pt}
+  #printSheet h1{margin:1mm 0 0;font-size:18pt;font-weight:900}
+  #printSheet .ps-meta{display:grid;grid-template-columns:auto 32mm;gap:1.5mm 2mm;align-items:end;font-size:10pt}
+  #printSheet .ps-line{border-bottom:1px solid #111;height:5mm}
+  #printSheet .ps-sign{width:19mm;height:14mm;border:1px solid #111;font-size:8pt;text-align:center;padding-top:.8mm;box-sizing:border-box}
+  #printSheet table{width:100%;border-collapse:collapse;table-layout:fixed}
+  #printSheet th,#printSheet td{border:1px solid #888;padding:0 1.5mm;height:7.6mm;font-size:9.5pt}
+  #printSheet th{background:#E6EAE8;height:8mm;font-size:9pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #printSheet thead{display:table-header-group}
+  #printSheet tr{break-inside:avoid}
+  #printSheet tbody tr:nth-child(even) td:nth-child(-n+4){background:#F2F4F3;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #printSheet .c{text-align:center}#printSheet .r{text-align:right}
+  #printSheet .nm{white-space:nowrap;overflow:hidden}#printSheet .nm b{font-weight:500}
+  #printSheet small{font-size:8pt;color:#444;font-weight:400}
+  #printSheet .cas{font-size:8.5pt;color:#444;vertical-align:bottom}
+  #printSheet .ps-foot{display:flex;justify-content:space-between;gap:4mm;border-top:1px solid #888;margin-top:2mm;padding-top:1.5mm;font-size:8pt;color:#333}
+}
