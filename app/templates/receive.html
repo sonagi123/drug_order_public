@@ -12,6 +12,7 @@
   <a href="{{ url_for('main.receive_done') }}">입고 완료</a>
   <a href="{{ url_for('main.receive_export') }}">엑셀 내보내기</a>
 </div>
+<p class="sub" style="margin:0">바코드 스캐너가 있으면 상자의 네모난 바코드를 찍기만 해도 돼요. 받은 수량 +1통, 사용기한·도매상이 같이 기록돼요. 없으면 지금처럼 수량을 고르면 돼요.</p>
 <div id="orders" class="grid3" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))"></div>
 <section class="card" id="sheet" style="overflow:hidden"></section>
 <section style="display:flex;flex-direction:column;gap:8px">
@@ -31,7 +32,7 @@
 <script>
 const D = {{ data|tojson }};
 function pickWho(n) { S.who = n; saveStaff(n); render(); }
-const S = { who: savedStaff(), order: D.orders.length ? D.orders[0].id : null, chk: {}, got: {}, extras: [] };
+const S = { who: savedStaff(), order: D.orders.length ? D.orders[0].id : null, chk: {}, got: {}, extras: [], box: {}, exp: {} };
 
 function render() {
   const ppl = D.staff.length ? D.staff : [];
@@ -53,12 +54,15 @@ function render() {
       <div class="row it-step" style="gap:8px"><span class="muted">받은 수량</span>
         <span class="step lg"><button aria-label="한 통 줄이기" onclick="setGot(${i.id},${got - 1})">−</button><span class="v">${got}</span><button aria-label="한 통 늘리기" onclick="setGot(${i.id},${got + 1})">+</button></span></div>
       <button class="del-btn" aria-label="이 품목 삭제" title="이 품목 삭제" onclick="delItem(${i.id})"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button>
+      ${expRow('i' + i.id, S.box[i.id], S.exp[i.id], `S.exp[${i.id}]=this.value`)}
       ${got < i.packs ? `<div class="it-note">주문보다 ${i.packs - got}통 적음 → 확인하면 ${i.packs - got}통은 미송분으로 넘어가요</div>` : ''}
     </div>`;
   }).join('');
   const extras = S.extras.map((e, k) => `<div class="item done"><span class="tag new">주문 외</span><div class="grow">${esc(e.name)}</div>
       <span class="step lg"><button onclick="S.extras[${k}].packs=Math.max(1,S.extras[${k}].packs-1);render()">−</button><span class="v">${e.packs}</span><button onclick="S.extras[${k}].packs++;render()">+</button></span>
-      <button onclick="S.extras.splice(${k},1);render()" aria-label="빼기">${XMARK}</button></div>`).join('');
+      <button onclick="S.extras.splice(${k},1);render()" aria-label="빼기">${XMARK}</button>
+      ${e.wsName ? `<span class="muted small" style="flex-basis:100%">${esc(e.wsName)}에서 들어옴</span>` : ''}
+      ${expRow('e' + k, e.boxes, e.exp, `S.extras[${k}].exp=this.value`)}</div>`).join('');
   sheet.innerHTML = `<div class="row between sheet-head" style="padding:14px 18px;border-bottom:1px solid var(--line);background:#F8FAF9">
       <div><b>${esc(o.ws)}</b> · ${o.date.slice(5).replace('-', '/')} 주문분 · 입고일 <input type="date" id="rdate" value="${D.today}" style="padding:6px 8px"></div>
       <div class="row"><b style="color:var(--g)">${done} / ${o.items.length} 확인</b><button class="outline" onclick="checkAll()">${CHECK}일괄 확인</button>
@@ -104,11 +108,64 @@ function addExtra() {
 async function save() {
   if (!S.who) { toast('체크하는 사람을 먼저 골라주세요.'); return; }
   const o = D.orders.find(x => x.id === S.order);
-  const items = o.items.filter(i => S.chk[i.id]).map(i => ({ id: i.id, packs: S.got[i.id] ?? i.packs }));
+  const items = o.items.filter(i => S.chk[i.id]).map(i => ({ id: i.id, packs: S.got[i.id] ?? i.packs, boxes: S.box[i.id] || [], exp: S.exp[i.id] || '' }));
   if (!items.length && !S.extras.length) { toast('확인한 품목이 없어요.'); return; }
   const j = await post('/api/receive', { staff: S.who, date: document.getElementById('rdate').value, items,
-    extras: S.extras.map(e => ({ code: e.code, packs: e.packs, ws: o.wsId })) });
+    extras: S.extras.map(e => ({ code: e.code, packs: e.packs, ws: e.ws || o.wsId, boxes: e.boxes || [], exp: e.exp || '' })) });
   if (j.ok) { toast(`저장했어요.${j.short ? ` 덜 들어온 ${j.short}통은 미송분으로 넘어갔어요.` : ''}`); setTimeout(() => location.reload(), 1200); }
+}
+// 사용기한: 찍은 상자는 기한별로 묶어 보여주고, 찍지 않은 통은 손으로 적는 칸
+function expRow(key, boxes, exp, oninput) {
+  const g = {}; (boxes || []).forEach(b => g[b.exp || ''] = (g[b.exp || ''] || 0) + 1);
+  const chips = Object.entries(g).sort().map(([e, n]) => `<span class="exp-chip">${fmtExp(e)} × ${n}통</span>`).join('');
+  return `<div class="it-exp"><span class="muted">사용기한</span>${chips}
+    <input aria-label="사용기한 직접 적기" placeholder="${chips ? '나머지 통 기한' : '예: 2811 (비워도 돼요)'}" value="${esc(exp || '')}" oninput="${oninput}"></div>`;
+}
+// 바코드: 이 주문에 있는 약이면 받은 수량 +1통, 없으면 도매상을 물어보고 주문 외 입고로
+window.onBarcode = async raw => {
+  const o = D.orders.find(x => x.id === S.order);
+  if (!o) { scanPop('입고를 기다리는 주문을 먼저 골라주세요.', 'err'); return; }
+  const p = await post('/api/barcode', { raw });
+  if (!p.ok) return;
+  const seen = [...Object.values(S.box).flat(), ...S.extras.flatMap(e => e.boxes || [])];
+  if (p.dup || (p.serial && seen.some(b => b.gtin === p.gtin && b.serial === p.serial))) { scanPop('이미 찍은 상자예요. 수량은 그대로예요.', 'err'); return; }
+  const d = await scanPick(p);
+  if (!d) return;
+  const box = { gtin: p.gtin, exp: p.exp, lot: p.lot, serial: p.serial };
+  const warn = p.exp ? '' : ' · <b>사용기한을 못 읽었어요</b>';
+  const it = o.items.find(i => i.code === d.code || i.root === d.code);
+  if (it) {
+    (S.box[it.id] = S.box[it.id] || []).push(box);
+    S.got[it.id] = S.box[it.id].length; S.chk[it.id] = true; render();
+    scanPop(`<b>${esc(it.name)}</b> +1통 (${S.got[it.id]}/${it.packs}) · ${fmtExp(p.exp)}${warn}`, p.exp ? 'ok' : 'warn', () => {
+      S.box[it.id].pop(); S.got[it.id] = S.box[it.id].length; if (!S.got[it.id]) { delete S.got[it.id]; S.chk[it.id] = false; } render();
+    });
+    return;
+  }
+  let ex = S.extras.find(e => e.code === d.code);
+  if (!ex) {
+    const ws = await pickWs(d, o);
+    if (!ws) return;
+    ex = { code: d.code, name: d.name, packs: 0, ws: ws.id, wsName: ws.name, boxes: [] }; S.extras.push(ex);
+  }
+  ex.boxes.push(box); ex.packs = ex.boxes.length; render();
+  scanPop(`<b>${esc(d.name)}</b> 주문 외 +1통 (${ex.packs}) · ${fmtExp(p.exp)}${warn}`, p.exp ? 'ok' : 'warn', () => {
+    ex.boxes.pop(); ex.packs = ex.boxes.length; if (!ex.packs) S.extras.splice(S.extras.indexOf(ex), 1); render();
+  });
+};
+function pickWs(d, o) {
+  return new Promise(resolve => {
+    const box = document.createElement('div'); box.className = 'sheet-bg'; box.style.zIndex = 60;
+    box.innerHTML = `<div class="sheet card pad" style="max-width:520px;display:flex;flex-direction:column;gap:12px" role="dialog" aria-label="어느 도매상">
+      <h2>주문서에 없는 약이에요</h2><div class="scan-drug"><b>${esc(d.name)}</b><span class="muted small">${esc(d.label)}</span></div>
+      <b>어느 도매상에서 왔나요?</b><div class="row" style="gap:6px">${D.ws.map(w => `<button class="chip ${w.id === o.wsId ? 'on' : ''}" data-w="${w.id}">${esc(w.name)}</button>`).join('')}</div>
+      <button class="primary big" data-y>주문 외 입고로 추가</button><button data-x>건너뛰기</button></div>`;
+    let pick = D.ws.find(w => w.id === o.wsId) || D.ws[0];
+    box.querySelectorAll('[data-w]').forEach(b => b.onclick = () => { pick = D.ws.find(w => w.id === +b.dataset.w); box.querySelectorAll('[data-w]').forEach(x => x.classList.toggle('on', x === b)); });
+    box.querySelector('[data-y]').onclick = () => { box.remove(); resolve(pick); };
+    box.querySelector('[data-x]').onclick = () => { box.remove(); resolve(null); };
+    document.body.appendChild(box); box.querySelector('[data-y]').focus();
+  });
 }
 render();
 </script>

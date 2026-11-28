@@ -113,6 +113,15 @@ CREATE TABLE IF NOT EXISTS psy_usage (
   code TEXT NOT NULL, date TEXT NOT NULL, qty REAL NOT NULL, staff TEXT, created_at TEXT,
   PRIMARY KEY (code, date)
 );
+-- 바코드(의약품 표준코드 GTIN) → 약 연결. 처음 찍을 때 "이 약이 맞나요?"로 확인한 것
+CREATE TABLE IF NOT EXISTS barcodes (gtin TEXT PRIMARY KEY, code TEXT NOT NULL, created_at TEXT);
+-- 사용기한을 아는 상자(바코드로 찍었거나 손으로 적은 것). src: in=입고 체크, shelf=약품 관리(기존 재고)
+-- status: ok | gone(폐기·반품으로 재고에서 뺌), flag: first(먼저 쓰기)
+CREATE TABLE IF NOT EXISTS boxes (
+  id INTEGER PRIMARY KEY, code TEXT NOT NULL, gtin TEXT, exp TEXT NOT NULL, lot TEXT, serial TEXT,
+  qty INTEGER DEFAULT 1, pack INTEGER, ws_id INTEGER, src TEXT, receipt_id INTEGER, flag TEXT,
+  status TEXT DEFAULT 'ok', note TEXT, units_gone REAL, created_at TEXT, done_at TEXT
+);
 -- 직원 연차: 하루(또는 반나절)마다 한 줄. grp = 한 번에 신청한 묶음
 CREATE TABLE IF NOT EXISTS leaves (
   id INTEGER PRIMARY KEY, staff_id INTEGER NOT NULL, date TEXT NOT NULL, kind TEXT DEFAULT 'full',

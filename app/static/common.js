@@ -101,3 +101,82 @@ function peopleHtml(staff, who, onPick, label) {
     ? staff.map(n => `<button class="chip ${who === n ? 'on' : ''}" onclick="${onPick}(${esc(JSON.stringify(n))})">${esc(n)}</button>`).join('')
     : '<a class="btn" href="/settings#staff">직원 이름 등록하기</a>');
 }
+
+// ---- 바코드 스캐너 (키보드처럼 글자를 쳐 주는 방식) ----
+// 아주 빠르게 들어온 글자 + Enter 이고 의약품 바코드(01 + 14자리)로 시작하면 window.onBarcode(raw) 호출.
+// 사람이 이 속도로 칠 수는 없어서 손으로 치는 입력과 헷갈리지 않음.
+(function () {
+  let buf = '', last = 0, start = 0;
+  document.addEventListener('keydown', e => {
+    if (!window.onBarcode) return;
+    const now = performance.now();
+    if (now - last > 80) { buf = ''; start = now; }
+    last = now;
+    if (e.key === 'Enter') {
+      const raw = buf; buf = '';
+      if (raw.length >= 16 && /^(\][A-Za-z]\d)?\(?01\)?\d{14}/.test(raw) && (now - start) / raw.length < 40) {
+        e.preventDefault(); e.stopPropagation();
+        const el = document.activeElement, plain = raw.replace(/\x1d/g, '');
+        if (el && typeof el.value === 'string' && el.value.endsWith(plain)) el.value = el.value.slice(0, -plain.length);
+        window.onBarcode(raw);
+      }
+      return;
+    }
+    let ch = e.key;
+    if (e.ctrlKey && (e.key === ']' || e.code === 'BracketRight')) ch = '\x1d';  // 구분 글자(GS)
+    else if (ch === 'Process' && /^Key[A-Z]$/.test(e.code)) ch = e.code.slice(3);  // 한글 입력 상태여도 영문으로
+    else if (ch === 'Process' && /^Digit\d$/.test(e.code)) ch = e.code.slice(5);
+    if (ch && ch.length === 1) buf += ch;
+  }, true);
+})();
+const fmtExp = s => s ? s.replace(/-/g, '.') : '기한 모름';
+// 찍은 결과를 1초쯤 보여주는 작은 팝업. undo가 있으면 [취소] 버튼과 함께 조금 더 오래
+function scanPop(html, kind, undo) {
+  let el = document.getElementById('scanPop');
+  if (!el) { el = document.createElement('div'); el.id = 'scanPop'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.className = 'scan-pop ' + (kind || 'ok');
+  el.innerHTML = `<span>${html}</span>${undo ? '<button type="button">취소</button>' : ''}`;
+  if (undo) el.querySelector('button').onclick = () => { el.style.display = 'none'; undo(); };
+  el.style.display = 'flex';
+  clearTimeout(window.__sp); window.__sp = setTimeout(() => el.style.display = 'none', kind === 'err' ? 3500 : undo ? 2500 : 1300);
+}
+// 찍은 바코드의 약 정하기: 연결된 바코드면 바로, 처음이면 "이 약이 맞나요?", 못 찾으면 검색해서 고르기
+function scanPick(p) {
+  if (p.drug && p.linked) return Promise.resolve(p.drug);
+  return new Promise(resolve => {
+    const box = document.createElement('div');
+    box.className = 'sheet-bg'; box.style.zIndex = 60;
+    const info = `<div class="scan-info">사용기한 <b>${fmtExp(p.exp)}</b>${p.lot ? ' · 제조번호 ' + esc(p.lot) : ''}<br><span class="muted small">표준코드 ${esc(p.gtin.replace(/^0/, ''))}</span></div>`;
+    const done = async d => {
+      if (d) { const j = await post('/api/barcode/link', { gtin: p.gtin, code: d.code }); if (!j.ok) return; }
+      box.remove(); resolve(d);
+    };
+    const search = () => {
+      box.innerHTML = `<div class="sheet card pad" style="max-width:520px;display:flex;flex-direction:column;gap:12px" role="dialog" aria-label="어떤 약인가요">
+        <h2>어떤 약인가요?</h2>${info}
+        <input type="search" data-q placeholder="약 이름으로 찾기" aria-label="약 이름으로 찾기">
+        <div data-res class="scan-res"><span class="muted small">이름 일부를 적으면 목록이 나와요. 없는 약은 약품 관리에서 먼저 추가해 주세요.</span></div>
+        <button data-x>닫기 (이 상자는 건너뛰기)</button></div>`;
+      const q = box.querySelector('[data-q]'), res = box.querySelector('[data-res]');
+      let items = [];
+      q.oninput = async () => {
+        const r = await fetch('/api/barcode/search?q=' + encodeURIComponent(q.value.trim())).then(r => r.json());
+        items = r.items || [];
+        res.innerHTML = items.map((d, k) => `<button data-k="${k}"><b>${esc(d.name)}</b><span class="muted small">${esc(d.label)}</span></button>`).join('') || '<span class="muted small">찾는 약이 없어요.</span>';
+        res.querySelectorAll('[data-k]').forEach(b => b.onclick = () => done(items[+b.dataset.k]));
+      };
+      box.querySelector('[data-x]').onclick = () => { box.remove(); resolve(null); };
+      setTimeout(() => q.focus(), 50);
+    };
+    if (p.drug) {
+      box.innerHTML = `<div class="sheet card pad" style="max-width:520px;display:flex;flex-direction:column;gap:12px" role="dialog" aria-label="이 약이 맞나요">
+        <span class="small" style="color:var(--g);font-weight:700">처음 찍는 바코드</span><h2>이 약이 맞나요?</h2>
+        <div class="scan-drug"><b>${esc(p.drug.name)}</b><span class="muted small">${esc(p.drug.label)}</span></div>${info}
+        <button class="primary big" data-y>맞아요</button><button data-n>다른 약이에요</button>
+        <p class="muted small" style="margin:0">한 번 맞다고 하면 다음부터 이 바코드는 묻지 않아요.</p></div>`;
+      box.querySelector('[data-y]').onclick = () => done(p.drug);
+      box.querySelector('[data-n]').onclick = search;
+      document.body.appendChild(box); box.querySelector('[data-y]').focus();
+    } else { document.body.appendChild(box); search(); }
+  });
+}

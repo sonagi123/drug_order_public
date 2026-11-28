@@ -149,6 +149,7 @@ def message_for(ws, lines):
 
 @bp.route("/order")
 def order():
+    from . import expiry
     rows = calc.drug_rows()
     cart = {r["code"]: dict(r) for r in db.q("SELECT * FROM cart")}
     items = []
@@ -175,7 +176,7 @@ def order():
                      "footer": w["footer"] or db.get_setting("msg_footer")} for w in wss}
     return render_template("order.html", data={
         "items": items, "cart": cart, "ws": wss, "msg": msg, "lastEnd": last_end, "estDays": est_days,
-        "notReady": not_ready, "oldBackorders": old_bo})
+        "notReady": not_ready, "oldBackorders": old_bo, "expAlert": expiry.alert_count()})
 
 
 @bp.post("/api/cart")
@@ -268,7 +269,7 @@ def _left_sql():
 @bp.route("/receive")
 def receive():
     rows = db.q("""SELECT oi.id, oi.order_id, oi.code, oi.packs, oi.pack, o.order_date, o.ws_id, w.name AS ws,
-                     COALESCE(NULLIF(d.order_name,''), d.name) AS name, d.pack_label, d.unit
+                     COALESCE(NULLIF(d.order_name,''), d.name) AS name, d.pack_label, d.unit, COALESCE(d.alias_of, d.code) AS root
                     FROM order_items oi JOIN orders o ON o.id=oi.order_id JOIN wholesalers w ON w.id=o.ws_id
                     JOIN drugs d ON d.code=oi.code
                     WHERE oi.checked=0 ORDER BY o.order_date, o.id, d.maker, d.name""")
@@ -276,7 +277,7 @@ def receive():
     for r in rows:
         o = orders.setdefault(r["order_id"], {"id": r["order_id"], "ws": r["ws"], "wsId": r["ws_id"],
                                               "date": r["order_date"], "items": []})
-        o["items"].append({"id": r["id"], "code": r["code"], "name": r["name"], "packs": r["packs"],
+        o["items"].append({"id": r["id"], "code": r["code"], "root": r["root"], "name": r["name"], "packs": r["packs"],
                            "pack": r["pack"], "label": r["pack_label"] or f"{r['pack']}{r['unit']}"})
     recent = db.q("""SELECT r.date, r.staff, w.name AS ws, COUNT(*) AS n, SUM(r.item_id IS NULL) AS extra
                      FROM receipts r LEFT JOIN wholesalers w ON w.id=r.ws_id
@@ -286,6 +287,7 @@ def receive():
               "label": r["pack_label"] or ""} for r in db.q("SELECT * FROM drugs WHERE active=1 ORDER BY name")]
     return render_template("receive.html", data={
         "orders": list(orders.values()), "staff": staff_list(), "backorders": bo, "drugs": drugs,
+        "ws": [{"id": w["id"], "name": w["name"]} for w in wholesalers()],
         "recent": [dict(r) for r in recent], "today": db.today()})
 
 
@@ -321,6 +323,7 @@ def receive_done():
 
 @bp.post("/api/receive")
 def receive_save():
+    from . import expiry
     j = request.get_json()
     staff = (j.get("staff") or "").strip()
     if not staff:
@@ -334,8 +337,9 @@ def receive_save():
             continue
         got = max(0, int(it["packs"]))
         if got:
-            conn.execute("""INSERT INTO receipts(item_id, code, ws_id, packs, pack, date, staff, created_at)
-                            VALUES (?,?,?,?,?,?,?,?)""", (oi["id"], oi["code"], oi["ws_id"], got, oi["pack"], day, staff, db.now()))
+            rid = conn.execute("""INSERT INTO receipts(item_id, code, ws_id, packs, pack, date, staff, created_at)
+                            VALUES (?,?,?,?,?,?,?,?)""", (oi["id"], oi["code"], oi["ws_id"], got, oi["pack"], day, staff, db.now())).lastrowid
+            expiry.add_boxes(oi["code"], it.get("boxes"), it.get("exp"), got, oi["ws_id"], rid, "in")
         conn.execute("UPDATE order_items SET checked=1 WHERE id=?", (oi["id"],))
         short += max(0, oi["packs"] - got)
         n += 1
@@ -343,9 +347,10 @@ def receive_save():
         g = db.one("SELECT pack FROM drugs WHERE code=?", (ex["code"],))
         if not g or int(ex["packs"]) <= 0:
             continue
-        conn.execute("""INSERT INTO receipts(item_id, code, ws_id, packs, pack, date, staff, note, created_at)
+        rid = conn.execute("""INSERT INTO receipts(item_id, code, ws_id, packs, pack, date, staff, note, created_at)
                         VALUES (NULL,?,?,?,?,?,?,'주문 외 입고',?)""",
-                     (ex["code"], ex.get("ws"), int(ex["packs"]), g["pack"] or 1, day, staff, db.now()))
+                     (ex["code"], ex.get("ws"), int(ex["packs"]), g["pack"] or 1, day, staff, db.now())).lastrowid
+        expiry.add_boxes(ex["code"], ex.get("boxes"), ex.get("exp"), int(ex["packs"]), ex.get("ws"), rid, "in")
         n += 1
     conn.commit()
     return ok(count=n, short=short)
@@ -694,7 +699,8 @@ def drugs():
             "buy": r["buy_price"], "pref": r["pref_ws"], "isNew": r["is_new"], "active": r["active"], "hist": r["code"] in hist,
             "daysLeft": r["days_left"],
         })
-    return render_template("drugs.html", data={"rows": rows, "ws": wholesalers(), "days": days})
+    from . import expiry
+    return render_template("drugs.html", data={"rows": rows, "ws": wholesalers(), "days": days, "expAlert": expiry.alert_count()})
 
 
 @bp.post("/api/drug/<code>/delete")

@@ -335,3 +335,19 @@ tr.done td{background:#F1F8F4}
 .lv-left{background:var(--gl);border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;color:var(--g)}
 .lv-left b{font-size:24px}
 @media (max-width:640px){.lv-day{min-height:58px;font-size:11px}.lv-side{position:static}}
+/* 바코드·사용기한 */
+.scan-pop{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:70;display:none;align-items:center;gap:12px;background:var(--g);color:#fff;border-radius:14px;padding:12px 18px;font-size:16px;box-shadow:0 8px 24px rgba(0,0,0,.2);max-width:calc(100vw - 32px)}
+.scan-pop.err{background:#9B1C14}
+.scan-pop.warn{background:#8A4B06}
+.scan-pop button{border:1px solid rgba(255,255,255,.6);background:transparent;color:#fff;min-height:36px}
+.scan-info{background:var(--line2);border-radius:12px;padding:10px 14px;font-size:14px}
+.scan-drug{border:2px solid var(--g);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;font-size:18px}
+.scan-res{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto}
+.scan-res button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:2px}
+.exp-chip{display:inline-block;background:var(--gl);color:var(--g);border-radius:8px;padding:3px 9px;font-size:13px;font-weight:700;white-space:nowrap}
+.exp-chip.soon{background:#FFF4E0;color:var(--amb)}
+.exp-chip.past{background:#FDECEA;color:var(--red)}
+.it-exp{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px}
+.it-exp input{width:200px;padding:6px 10px;min-height:36px}
+.exp-alert{display:flex;align-items:center;gap:12px;background:#FDECEA;color:#8F1D14;border-radius:12px;padding:12px 16px;text-decoration:none}
+.exp-alert:hover{color:#8F1D14;background:#FBDCD8}

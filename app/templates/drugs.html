@@ -262,7 +262,8 @@ function render() {
   document.getElementById('wsFilter').innerHTML = '<span class="muted small" style="margin-right:2px">자주 담는 도매상</span>' + wsDefs.map(([k, l, n]) =>
     `<button class="chip ${S.ws === k ? 'on' : ''}" data-k="${k}" onclick="S.ws=this.dataset.k;render()">${esc(l)} ${n}</button>`).join('');
   document.getElementById('modeTabs').innerHTML = [['edit', '약 정보 편집'], ['stock', '재고 일괄 입력 (통/정)']].map(([k, l]) =>
-    `<button class="${S.mode === k ? 'on' : ''}" onclick="S.mode='${k}';render()">${l}</button>`).join('');
+    `<button class="${S.mode === k ? 'on' : ''}" onclick="S.mode='${k}';render()">${l}</button>`).join('') +
+    `<a href="/expiry?t=shelf">바코드로 사용기한 등록</a><a href="/expiry?t=soon">사용기한 임박${D.expAlert ? ` <span class="count">${D.expAlert}</span>` : ''}</a>`;
   const stockMode = S.mode === 'stock';
   document.getElementById('stockBar').style.display = stockMode && !MOBILE ? 'flex' : 'none';
   document.getElementById('thead').innerHTML = stockMode ? '<tr><th>약품</th><th>포장</th><th class="r">지금 추정 재고</th><th>실제 재고: 통 + 낱알 (Enter = 다음 칸)</th></tr>' : HEAD_EDIT;
