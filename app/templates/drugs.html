@@ -4,7 +4,7 @@
 <div class="row between" style="align-items:flex-end">
   <div>
     <h1>약품 관리</h1>
-    <div class="usage-note">{% set u = usage_note() %}{% if u %}<b>처방 반영: {% if u.today %}오늘 {% endif %}{{ u.label }} {{ u.when }}</b>{% else %}<b>아직 처방 통계가 없어요</b> · 업로드에서 eghis 통계를 올려 주세요{% endif %}</div>
+    <div class="usage-note">{% set u = usage_note() %}{% if u %}<b>처방 반영: {% if u.today %}오늘 {% endif %}{{ u.label }}까지</b>{% if u.when %} · {{ u.when }}{% endif %}{% else %}<b>아직 처방 통계가 없어요</b> · 업로드에서 eghis 통계를 올려 주세요{% endif %}</div>
     <p class="sub m-only">약마다 남은 통 수와 낱알 수를 적고(예: 3통 + 20정, 한쪽만 적어도 돼요), 다 적은 뒤 아래 <b>저장</b>을 한 번만 누르세요. 저장 전에 화면이 새로고침돼도 적은 값은 남아 있어요.</p>
     <p class="sub hide-m">목표 재고는 알약 개수(정)로 입력해요. 옆의 제안값(최근 주평균 × {{ (data.days / 7)|round(1)|replace('.0','') }}주)을 그대로 적용해도 돼요. 칸을 고치면 바로 저장돼요.</p>
   </div>

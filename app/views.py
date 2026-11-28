@@ -43,13 +43,13 @@ def usage_note():
     gap = (t - e).days
     n = e + timedelta(days=1)
     nxt = f"{n.month}/{n.day}({wd[n.weekday()]})"
-    # 끝 날짜 당일에 내려받은 파일이면 그 시각까지만 들어 있음 (예: 월요일 오전 9시에 받으면 월요일 오전분까지)
+    # 그 파일을 받은(읽은) 시각: 끝 날짜 당일이면 그 시각까지의 처방만 들어 있음
     r = db.one("SELECT created_at FROM usage_imports WHERE end=? ORDER BY created_at DESC LIMIT 1", (end,))
     at = (r["created_at"] or "") if r else ""
-    when = "하루 전체"
-    if at[:10] == end and len(at) >= 16:
-        h, mi = int(at[11:13]), at[14:16]
-        when = f"{'오전' if h < 12 else '오후'} {h % 12 or 12}:{mi}까지"
+    when = ""
+    if len(at) >= 16:
+        a, h, mi = date.fromisoformat(at[:10]), int(at[11:13]), at[14:16]
+        when = f"{a.month}/{a.day}({wd[a.weekday()]}) {'오전' if h < 12 else '오후'} {h % 12 or 12}:{mi} 받은 파일"
     return {"end": end, "label": label, "when": when, "today": gap <= 0, "gap": max(0, gap), "next": nxt}
 
 
