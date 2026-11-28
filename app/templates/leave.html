@@ -60,13 +60,13 @@ function side() {
 function cal() {
   const first = new Date(D.m + '-01T00:00:00'), y = first.getFullYear(), mo = first.getMonth();
   document.getElementById('mtitle').textContent = `${y}년 ${mo + 1}월`;
-  const last = new Date(y, mo + 1, 0).getDate(), off = (first.getDay() + 6) % 7;  // 월요일 시작
+  const last = new Date(y, mo + 1, 0).getDate(), off = first.getDay();  // 일요일 시작
   const by = {}; D.leaves.forEach(l => (by[l.date] = by[l.date] || []).push(l));
-  let h = '월화수목금토일'.split('').map(d => `<div class="lv-hd">${d}</div>`).join('') + '<div></div>'.repeat(off);
+  let h = '일월화수목금토'.split('').map(d => `<div class="lv-hd">${d}</div>`).join('') + '<div></div>'.repeat(off);
   for (let d = 1; d <= last; d++) {
     const ds = `${D.m}-${String(d).padStart(2, '0')}`, dow = (off + d - 1) % 7;
     const items = (by[ds] || []).map(l => `<span class="lv-chip ${l.status}" ${l.status === 'wait' ? `title="눌러서 취소" onclick="event.stopPropagation();cancel(${l.id},'${esc(l.name)}','${ds}')"` : ''}>${esc(l.name)}${l.kind === 'full' ? '' : ' ' + KIND[l.kind][0].replace(' 반차', '반차')}</span>`).join('');
-    h += `<button class="lv-day ${S.pick.has(ds) ? 'pick' : ''} ${ds === D.today ? 'today' : ''} ${dow >= 5 ? 'we' : ''}" onclick="tog('${ds}')" aria-label="${mo + 1}월 ${d}일" aria-pressed="${S.pick.has(ds)}"><span class="lv-n">${d}</span>${items}</button>`;
+    h += `<button class="lv-day ${S.pick.has(ds) ? 'pick' : ''} ${ds === D.today ? 'today' : ''} ${dow === 0 || dow === 6 ? 'we' : ''}" onclick="tog('${ds}')" aria-label="${mo + 1}월 ${d}일" aria-pressed="${S.pick.has(ds)}"><span class="lv-n">${d}</span>${items}</button>`;
   }
   document.getElementById('cal').innerHTML = h;
 }
