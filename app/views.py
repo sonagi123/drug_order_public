@@ -395,9 +395,11 @@ def backorder_confirm():
             continue
         got = min(max(0, int(it["packs"])), oi["left"])
         if got:
-            conn.execute("""INSERT INTO receipts(item_id, code, ws_id, packs, pack, date, staff, note, created_at)
+            rid = conn.execute("""INSERT INTO receipts(item_id, code, ws_id, packs, pack, date, staff, note, created_at)
                             VALUES (?,?,?,?,?,?,?,'미송 입고',?)""",
-                         (oi["id"], oi["code"], oi["ws_id"], got, oi["pack"], j.get("date") or db.today(), staff, db.now()))
+                         (oi["id"], oi["code"], oi["ws_id"], got, oi["pack"], j.get("date") or db.today(), staff, db.now())).lastrowid
+            from . import expiry
+            expiry.add_boxes(oi["code"], [], it.get("exp"), got, oi["ws_id"], rid, "in")
             n += 1
     conn.commit()
     return ok(count=n)

@@ -30,7 +30,7 @@
 <script>
 const D = {{ data|tojson }};
 function pickWho(n) { S.who = n; saveStaff(n); render(); }
-const S = { who: savedStaff(), ws: 'all', mode: 'date', sort: 'old', now: {} };
+const S = { who: savedStaff(), ws: 'all', mode: 'date', sort: 'old', now: {} , exp: {} };
 function vis() {
   return D.items.filter(i => S.ws === 'all' || i.ws === S.ws).sort((a, b) => S.sort === 'old' ? b.age - a.age || a.name.localeCompare(b.name, 'ko') : a.age - b.age || a.name.localeCompare(b.name, 'ko'));
 }
@@ -41,6 +41,7 @@ function card(i, showDate) {
       <div class="muted" style="font-size:14px;margin-top:4px">${esc(i.ws)}${showDate ? ' · ' + i.date.slice(5).replace('-', '/') + ' 주문' : ''} · ${esc(i.label)} · 주문 ${i.ordered}통 중 ${i.got}통 입고</div></div>
     <div class="row bo-step" style="gap:8px"><span class="muted">이번에 받은 수량</span>
       <span class="step lg"><button aria-label="한 통 줄이기" onclick="S.now[${i.id}]=Math.max(0,${now}-1);render()">−</button><span class="v">${now}/${i.left}</span><button aria-label="한 통 늘리기" onclick="S.now[${i.id}]=Math.min(${i.left},${now}+1);render()">+</button></span></div>
+    <label class="row small" style="gap:6px"><span class="muted">사용기한 (선택)</span><input placeholder="예: 2811" value="${esc(S.exp[i.id] || '')}" oninput="S.exp[${i.id}]=this.value" style="width:120px;min-height:40px"></label>
     <div class="row bo-btns"><button class="primary big" onclick="confirmOne(${i.id})">${CHECK}확인</button><button class="big" onclick="cancelOne(${i.id})">미송 취소</button></div></div>`;
 }
 function render() {
@@ -67,8 +68,8 @@ async function send(items) {
   const j = await post('/api/backorder/confirm', { staff: S.who, items });
   if (j.ok) { toast('입고 확인했어요.'); setTimeout(() => location.reload(), 800); }
 }
-function confirmOne(id) { const i = D.items.find(x => x.id === id); send([{ id, packs: S.now[id] ?? i.left }]); }
-function confirmAll() { const v = vis(); if (!v.length) return; if (confirm(`보이는 미송분 ${v.length}품목을 전량 입고로 확인할까요?`)) send(v.map(i => ({ id: i.id, packs: i.left }))); }
+function confirmOne(id) { const i = D.items.find(x => x.id === id); send([{ id, packs: S.now[id] ?? i.left, exp: S.exp[id] || '' }]); }
+function confirmAll() { const v = vis(); if (!v.length) return; if (confirm(`보이는 미송분 ${v.length}품목을 전량 입고로 확인할까요?`)) send(v.map(i => ({ id: i.id, packs: i.left, exp: S.exp[i.id] || '' }))); }
 async function cancelOne(id) {
   const i = D.items.find(x => x.id === id);
   if (!confirm(`${i.name} 미송 ${i.left}통을 취소할까요? 다음 주문 제안에 다시 들어가요.`)) return;

@@ -118,8 +118,8 @@ async function save() {
 function expRow(key, boxes, exp, oninput) {
   const g = {}; (boxes || []).forEach(b => g[b.exp || ''] = (g[b.exp || ''] || 0) + 1);
   const chips = Object.entries(g).sort().map(([e, n]) => `<span class="exp-chip">${fmtExp(e)} × ${n}통</span>`).join('');
-  return `<div class="it-exp"><span class="muted">사용기한</span>${chips}
-    <input aria-label="사용기한 직접 적기" placeholder="${chips ? '나머지 통 기한' : '예: 2811 (비워도 돼요)'}" value="${esc(exp || '')}" oninput="${oninput}"></div>`;
+  return `<div class="it-exp"><span class="muted">사용기한 (선택)</span>${chips}
+    <input aria-label="사용기한 직접 적기" placeholder="${chips ? '나머지 통 기한' : '예: 2811'}" value="${esc(exp || '')}" oninput="${oninput}"></div>`;
 }
 // 바코드: 이 주문에 있는 약이면 받은 수량 +1통, 없으면 도매상을 물어보고 주문 외 입고로
 window.onBarcode = async raw => {
