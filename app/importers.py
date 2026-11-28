@@ -114,7 +114,8 @@ def parse_period(filename):
     return f(m.group(1)), f(m.group(2))
 
 
-def import_stats(data, filename, start, end, replace=False, rows=None):
+def import_stats(data, filename, start, end, replace=False, rows=None, made_at=None):
+    """made_at: 파일을 만든(내려받은) 시각. 끝 날짜 당일이면 그 시각까지의 처방이 들어 있음."""
     if not start or not end:
         raise ValueError("기간(시작·끝 날짜)을 입력해 주세요.")
     if start > end:
@@ -139,7 +140,7 @@ def import_stats(data, filename, start, end, replace=False, rows=None):
         conn.execute("DELETE FROM usage WHERE import_id=?", (o["id"],))
         conn.execute("DELETE FROM usage_imports WHERE id=?", (o["id"],))
     cur = conn.execute("INSERT INTO usage_imports(start, end, filename, created_at) VALUES (?,?,?,?)",
-                       (start, end, filename, db.now()))
+                       (start, end, filename, made_at or db.now()))
     iid = cur.lastrowid
     added, count = 0, 0
     agg = {}

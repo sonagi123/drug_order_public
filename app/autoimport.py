@@ -9,6 +9,7 @@ from . import calc, db, importers
 
 ORDER = ["master", "stats", "ledger-pdf", "ledger-excel"]
 EXTS = (".xls", ".xlsx", ".htm", ".html", ".pdf")
+MADE = {}  # 자동 읽기 폴더의 파일 이름 → 파일 수정 시각(= eghis에서 내려받은 시각)
 WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
 
 
@@ -47,7 +48,7 @@ def process(files, ws_id=None, replace=False):
                     if start > end:
                         raise ValueError("새로 반영할 기간이 없어요(이미 어제까지 올라와 있어요).")
                     how = "지난번 업로드 다음 날 ~ 어제"
-                r = importers.import_stats(data, name, start, end, replace=rep, rows=rows)
+                r = importers.import_stats(data, name, start, end, replace=rep, rows=rows, made_at=MADE.pop(name, None))
                 out.append((name, "ok", f"처방 통계로 인식 — {start} ~ {end} ({how}), {r['count']}품목 반영"
                             + (f", 새 약 {r['added']}개" if r["added"] else "")))
             else:
@@ -102,6 +103,7 @@ def scan(force=False):
         mt = os.path.getmtime(p)
         if time.time() - mt < 20:  # 아직 저장 중일 수 있음
             continue
+        MADE[n] = datetime.fromtimestamp(mt).strftime("%Y-%m-%d %H:%M:%S")  # 처방 반영 시각 표시용
         sig = f"{n}|{int(mt)}|{os.path.getsize(p)}"
         if sig in seen:  # 이미 읽었는데 엑셀에서 열려 있어 못 옮긴 파일
             continue
